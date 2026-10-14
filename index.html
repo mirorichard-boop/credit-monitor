@@ -1,0 +1,496 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#0d1117">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>Credit Spread Monitor</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+  :root {
+    --bg: #0b0e11;
+    --bg-card: #12161c;
+    --bg-card-hover: #181d25;
+    --bg-header: #0d1117;
+    --border: #1e2530;
+    --border-light: #252d3a;
+    --text: #e2e8f0;
+    --text-secondary: #8b95a5;
+    --text-muted: #5a6578;
+    --green: #22c55e;
+    --green-dim: rgba(34,197,94,0.12);
+    --yellow: #eab308;
+    --yellow-dim: rgba(234,179,8,0.12);
+    --orange: #f97316;
+    --orange-dim: rgba(249,115,22,0.12);
+    --red: #ef4444;
+    --red-dim: rgba(239,68,68,0.12);
+    --blue: #3b82f6;
+    --blue-dim: rgba(59,130,246,0.12);
+    --cyan: #06b6d4;
+    --purple: #8b5cf6;
+    --radius: 8px;
+    --radius-lg: 12px;
+    --font: 'DM Sans', -apple-system, sans-serif;
+    --mono: 'JetBrains Mono', monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html { -webkit-text-size-adjust: 100%; }
+  body { font-family: var(--font); background: var(--bg); color: var(--text); min-height: 100vh; -webkit-font-smoothing: antialiased; overflow-x: hidden; }
+
+  .header { background: var(--bg-header); border-bottom: 1px solid var(--border); padding: 14px 24px; padding-top: max(14px, env(safe-area-inset-top)); display: flex; align-items: center; justify-content: space-between; gap: 12px; position: sticky; top: 0; z-index: 100; backdrop-filter: blur(12px); }
+  .header-left { display: flex; align-items: center; gap: 14px; min-width: 0; }
+  .logo { font-size: 17px; font-weight: 700; letter-spacing: -0.03em; display: flex; align-items: center; gap: 8px; white-space: nowrap; }
+  .logo-icon { width: 28px; height: 28px; background: linear-gradient(135deg, var(--blue), var(--cyan)); border-radius: 6px; display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 700; color: #fff; flex-shrink: 0; }
+  .header-right { display: flex; align-items: center; gap: 10px; min-width: 0; }
+  .btn { font-family: var(--font); font-size: 13px; font-weight: 500; padding: 7px 14px; border-radius: 6px; border: 1px solid var(--border); background: var(--bg-card); color: var(--text-secondary); cursor: pointer; transition: all 0.15s; display: flex; align-items: center; gap: 6px; white-space: nowrap; }
+  .btn:hover { background: var(--bg-card-hover); color: var(--text); border-color: var(--border-light); }
+  .status-bar { font-size: 11px; color: var(--text-muted); font-family: var(--mono); text-align: right; }
+
+  .main { max-width: 1440px; margin: 0 auto; padding: 24px; }
+
+  .composite-banner { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 24px 28px; margin-bottom: 24px; display: grid; grid-template-columns: 220px 1fr; gap: 28px; align-items: center; }
+  .score-display { text-align: center; }
+  .score-value { font-size: 60px; font-weight: 700; font-family: var(--mono); line-height: 1; letter-spacing: -0.04em; }
+  .score-label { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; margin-top: 4px; }
+  .score-sublabel { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
+  .score-bar-container { padding: 8px 0; min-width: 0; }
+  .score-bar-track { height: 10px; background: var(--bg); border-radius: 5px; position: relative; overflow: hidden; }
+  .score-bar-fill { height: 100%; border-radius: 5px; transition: width 0.8s cubic-bezier(0.16,1,0.3,1); }
+  .score-bar-zones { display: flex; justify-content: space-between; margin-top: 6px; font-size: 10px; font-weight: 500; text-transform: uppercase; letter-spacing: 0.06em; gap: 4px; }
+  .zone-clear { color: var(--green); } .zone-watch { color: var(--yellow); } .zone-caution { color: var(--orange); } .zone-danger { color: var(--red); }
+  .alerts-strip { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+  .alert-chip { font-size: 11px; font-weight: 500; padding: 4px 10px; border-radius: 4px; }
+
+  .window-note { background: var(--orange-dim); border: 1px solid rgba(249,115,22,0.25); border-radius: var(--radius); padding: 10px 14px; font-size: 12px; line-height: 1.5; color: var(--text-secondary); margin-bottom: 18px; display: none; }
+  .window-note.visible { display: block; }
+  .window-note b { color: var(--orange); font-weight: 600; }
+
+  .sections { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; margin-bottom: 24px; }
+  .section { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-lg); overflow: hidden; min-width: 0; }
+  .section-header { padding: 12px 16px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; }
+  .section-title { font-size: 13px; font-weight: 600; letter-spacing: -0.01em; display: flex; align-items: center; gap: 8px; }
+  .section-badge { font-size: 10px; font-weight: 600; padding: 2px 7px; border-radius: 4px; text-transform: uppercase; letter-spacing: 0.04em; }
+  .spread-row { display: grid; grid-template-columns: minmax(0,2.2fr) 0.9fr 0.8fr 0.8fr 0.8fr 64px; column-gap: 8px; padding: 9px 16px; border-bottom: 1px solid rgba(30,37,48,0.4); align-items: center; font-size: 13px; transition: background 0.1s; cursor: pointer; }
+  .spread-row:hover { background: rgba(255,255,255,0.015); }
+  .spread-row:last-child { border-bottom: none; }
+  .spread-row.header-row { font-size: 10px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.06em; padding: 7px 16px; background: rgba(0,0,0,0.15); cursor: default; }
+  .spread-row.header-row span:not(:first-child) { text-align: right; }
+  .spread-name { font-weight: 500; min-width: 0; }
+  .spread-range { display: block; font-family: var(--mono); font-size: 10px; font-weight: 400; color: var(--text-muted); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .spread-range.short { color: var(--orange); }
+  .rng-short { display: none; }
+  .spread-value { font-family: var(--mono); font-size: 13px; font-weight: 500; text-align: right; }
+  .spread-change { font-family: var(--mono); font-size: 12px; text-align: right; }
+  .spread-pct { font-family: var(--mono); font-size: 12px; text-align: right; }
+  .sensitivity-bar-cell { display: flex; justify-content: flex-end; }
+  .sensitivity-bar { height: 4px; border-radius: 2px; background: var(--border); width: 56px; overflow: hidden; }
+  .sensitivity-bar-fill { height: 100%; border-radius: 2px; }
+
+  .chart-section { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-lg); margin-bottom: 24px; overflow: hidden; }
+  .chart-header { padding: 14px 18px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+  .chart-header h3 { font-size: 14px; font-weight: 600; }
+  .chart-tabs { display: flex; gap: 2px; padding: 10px 16px; border-bottom: 1px solid var(--border); overflow-x: auto; flex-wrap: wrap; }
+  .chart-tab { font-family: var(--font); font-size: 11px; font-weight: 500; padding: 4px 10px; border-radius: 4px; border: none; background: transparent; color: var(--text-muted); cursor: pointer; white-space: nowrap; transition: all 0.15s; }
+  .chart-tab:hover { color: var(--text-secondary); background: rgba(255,255,255,0.03); }
+  .chart-tab.active { background: var(--blue-dim); color: var(--blue); }
+  .chart-container { padding: 16px; height: 300px; position: relative; }
+  .chart-container-lg { height: 400px; }
+  canvas { width: 100% !important; height: 100% !important; }
+
+  .methodology { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 18px 22px; margin-bottom: max(0px, env(safe-area-inset-bottom)); }
+  .methodology summary { font-size: 13px; font-weight: 600; cursor: pointer; color: var(--text-secondary); list-style: none; display: flex; align-items: center; gap: 8px; }
+  .methodology summary::-webkit-details-marker { display: none; }
+  .methodology summary::before { content: '▸'; transition: transform 0.2s; }
+  .methodology[open] summary::before { transform: rotate(90deg); }
+  .methodology-content { margin-top: 14px; font-size: 13px; line-height: 1.7; color: var(--text-secondary); columns: 2; column-gap: 32px; }
+  .methodology-content h4 { font-size: 12px; font-weight: 600; color: var(--text); text-transform: uppercase; letter-spacing: 0.04em; margin: 12px 0 4px; break-after: avoid; }
+  .methodology-content h4:first-child { margin-top: 0; }
+
+  .spinner { display: none; align-items: center; justify-content: center; gap: 8px; font-size: 13px; color: var(--text-secondary); padding: 32px; }
+  .spinner.active { display: flex; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .spinner-icon { width: 16px; height: 16px; border: 2px solid var(--border); border-top-color: var(--blue); border-radius: 50%; animation: spin 0.8s linear infinite; }
+
+  .error-msg { background: var(--red-dim); border: 1px solid rgba(239,68,68,0.3); border-radius: var(--radius); padding: 12px 16px; font-size: 13px; color: var(--red); margin-bottom: 16px; display: none; }
+  .error-msg.visible { display: block; }
+
+  @media (max-width: 960px) {
+    .sections { grid-template-columns: 1fr; }
+    .composite-banner { grid-template-columns: 1fr; gap: 14px; }
+    .methodology-content { columns: 1; }
+  }
+  @media (max-width: 600px) {
+    .main { padding: 12px 12px 24px; }
+    .header { padding: 10px 14px; padding-top: max(10px, env(safe-area-inset-top)); }
+    .logo { font-size: 15px; }
+    .logo-text-long { display: none; }
+    .btn { padding: 6px 10px; }
+    .status-bar { font-size: 10px; line-height: 1.35; }
+    .composite-banner { padding: 18px 16px; }
+    .score-value { font-size: 52px; }
+    .score-bar-zones { font-size: 9px; letter-spacing: 0.02em; }
+    .score-bar-zones .rng { display: none; }
+    .section-header { padding: 10px 12px; }
+    .spread-row { grid-template-columns: minmax(0,1fr) 48px 44px 44px 38px; column-gap: 6px; padding: 9px 12px; font-size: 12px; }
+    .spread-row.header-row { padding: 7px 12px; font-size: 9px; letter-spacing: 0.03em; }
+    .spread-value { font-size: 12px; }
+    .spread-change, .spread-pct { font-size: 11px; }
+    .sensitivity-bar-cell, .spread-row.header-row span:last-child { display: none; }
+    .rng-full { display: none; }
+    .rng-short { display: inline; }
+    .chart-header { padding: 12px 14px; }
+    .chart-container { padding: 10px 8px; height: 260px; }
+    .chart-container-lg { height: 320px; }
+    .methodology { padding: 16px; }
+  }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="header-left">
+    <div class="logo"><div class="logo-icon">CS</div>Credit Spread<span class="logo-text-long">&nbsp;Monitor</span></div>
+  </div>
+  <div class="header-right">
+    <span class="status-bar" id="last-updated">Loading…</span>
+    <button class="btn" onclick="loadAll()" title="Reload data">↻</button>
+  </div>
+</div>
+
+<div class="main">
+  <div class="error-msg" id="error-msg"></div>
+
+  <div class="composite-banner">
+    <div class="score-display">
+      <div class="score-value" id="composite-score">—</div>
+      <div class="score-label" id="composite-zone">AWAITING DATA</div>
+      <div class="score-sublabel">Composite Stress Score</div>
+    </div>
+    <div class="score-bar-container">
+      <div class="score-bar-track"><div class="score-bar-fill" id="score-bar" style="width:0%;background:var(--text-muted);"></div></div>
+      <div class="score-bar-zones">
+        <span class="zone-clear">Clear <span class="rng">(0–25)</span></span><span class="zone-watch">Watch <span class="rng">(25–50)</span></span><span class="zone-caution">Caution <span class="rng">(50–75)</span></span><span class="zone-danger">Danger <span class="rng">(75–100)</span></span>
+      </div>
+      <div class="alerts-strip" id="alerts"></div>
+    </div>
+  </div>
+
+  <div class="window-note" id="window-note"></div>
+
+  <div class="spinner" id="spinner"><div class="spinner-icon"></div>Loading data…</div>
+
+  <div class="sections">
+    <div class="section">
+      <div class="section-header"><span class="section-title">Investment Grade Spreads <span class="section-badge" id="badge-ig" style="background:var(--green-dim);color:var(--green);">—</span></span></div>
+      <div class="spread-row header-row"><span>Instrument</span><span>bps</span><span>Δ 1W</span><span>Δ 1M</span><span>Pctile</span><span>Weight</span></div>
+      <div id="grid-ig"></div>
+    </div>
+    <div class="section">
+      <div class="section-header"><span class="section-title">High Yield Spreads <span class="section-badge" id="badge-hy" style="background:var(--green-dim);color:var(--green);">—</span></span></div>
+      <div class="spread-row header-row"><span>Instrument</span><span>bps</span><span>Δ 1W</span><span>Δ 1M</span><span>Pctile</span><span>Weight</span></div>
+      <div id="grid-hy"></div>
+    </div>
+    <div class="section">
+      <div class="section-header"><span class="section-title">Treasury Curve <span class="section-badge" id="badge-curve" style="background:var(--green-dim);color:var(--green);">—</span></span></div>
+      <div class="spread-row header-row"><span>Instrument</span><span>bps</span><span>Δ 1W</span><span>Δ 1M</span><span>Pctile</span><span>Weight</span></div>
+      <div id="grid-curve"></div>
+    </div>
+    <div class="section">
+      <div class="section-header"><span class="section-title">Global &amp; Structured <span class="section-badge" id="badge-global" style="background:var(--green-dim);color:var(--green);">—</span></span></div>
+      <div class="spread-row header-row"><span>Instrument</span><span>Value</span><span>Δ 1W</span><span>Δ 1M</span><span>Pctile</span><span>Weight</span></div>
+      <div id="grid-global"></div>
+    </div>
+  </div>
+
+  <!-- 3-Year Historical Overlay -->
+  <div class="chart-section">
+    <div class="chart-header">
+      <h3>3-Year Historical Spreads</h3>
+      <div style="display:flex;gap:4px;flex-wrap:wrap;" id="hist-tabs">
+        <button class="chart-tab active" onclick="setHistoryView('key')" id="hist-tab-key">Key Spreads</button>
+        <button class="chart-tab" onclick="setHistoryView('ig')" id="hist-tab-ig">IG Detail</button>
+        <button class="chart-tab" onclick="setHistoryView('hy')" id="hist-tab-hy">HY Detail</button>
+        <button class="chart-tab" onclick="setHistoryView('curve')" id="hist-tab-curve">Curve</button>
+      </div>
+    </div>
+    <div class="chart-container chart-container-lg"><canvas id="history-canvas"></canvas></div>
+  </div>
+
+  <!-- Single Series -->
+  <div class="chart-section">
+    <div class="chart-header"><h3>Individual Series (Full Archive)</h3></div>
+    <div class="chart-tabs" id="chart-tabs"></div>
+    <div class="chart-container"><canvas id="single-canvas"></canvas></div>
+  </div>
+
+  <details class="methodology">
+    <summary>Methodology &amp; Framework</summary>
+    <div class="methodology-content">
+      <h4>Composite Stress Score</h4>
+      The score is a sensitivity-weighted average of percentile ranks for each series vs. its full archived history. Each series' current value is ranked against every observation in the archive; a value at the 90th percentile means spreads are wider than 90% of archived observations. These percentiles are then weighted by each series' sensitivity score (1–10) and averaged to produce the composite. The date range under each instrument name is the window it is ranked against.
+
+      <h4>Zone Thresholds</h4>
+      Clear (0–25): Normal or compressed spreads, typical of bull markets. Watch (25–50): Mild widening, mid-cycle. Caution (50–75): Significant widening, often pre-crisis. Danger (75+): Historically extreme levels, associated with recessions and credit events.
+
+      <h4>Sensitivity Weights</h4>
+      CCC-rated HY (10/10) is the most sensitive — it moves first and furthest in stress. BBB IG (7/10) carries the most fallen-angel risk. 10Y–3M curve (8/10) is the NY Fed's preferred recession predictor. The mortgage spread (5/10) proxies consumer credit conditions. EM corporate (6/10) captures global contagion. These weights ensure that a calm IG surface can't mask HY distress.
+
+      <h4>Curve Scoring</h4>
+      Treasury curve spreads are scored inversely — more negative (inverted) = higher stress. An inversion in 10Y–3M has preceded every U.S. recession since the 1960s. The Pctile column shows where the curve ranks in its own history; its color, the section badge, and the composite use the inverted (stress) reading.
+
+      <h4>Short History Windows</h4>
+      FRED now serves only the trailing ~3 years of the ICE BofA OAS indices. A short window makes percentiles relative to recent conditions only: after three calm years, a modest widening can rank near the 100th percentile. This site's archive keeps every observation it has collected, so the ICE windows lengthen by one day each business day. Windows shorter than 10 years are shown in orange.
+
+      <h4>Data Source</h4>
+      FRED (Federal Reserve Bank of St. Louis): ICE BofA OAS indices for IG and HY, Treasury constant-maturity spreads for the curve, and the Freddie Mac 30-year mortgage rate. A GitHub Action pulls FRED every weekday at 6pm Pacific, merges new observations into the archive, and recomputes the scores.
+    </div>
+  </details>
+</div>
+
+<script>
+// Display-only metadata. Weights, inversion, and scoring come from data/latest.json.
+const COLORS = {
+  BAMLC0A1CAAA: '#22c55e', BAMLC0A2CAA: '#4ade80', BAMLC0A3CA: '#86efac', BAMLC0A4CBBB: '#fbbf24',
+  BAMLH0A0HYM2: '#f97316', BAMLH0A1HYBB: '#fb923c', BAMLH0A2HYB: '#f87171', BAMLH0A3HYC: '#ef4444',
+  T10Y2Y: '#38bdf8', T10Y3M: '#3b82f6', T10YFF: '#818cf8',
+  BAMLEMCBPIOAS: '#a78bfa', BAMLHE00EHYIOAS: '#c084fc', MORTGAGE30US: '#e879f9', BAMLC0A0CM: '#f0abfc',
+};
+
+const HISTORY_VIEWS = {
+  key: ['BAMLC0A4CBBB','BAMLH0A0HYM2','BAMLH0A3HYC','BAMLC0A0CM'],
+  ig: ['BAMLC0A1CAAA','BAMLC0A2CAA','BAMLC0A3CA','BAMLC0A4CBBB'],
+  hy: ['BAMLH0A0HYM2','BAMLH0A1HYBB','BAMLH0A2HYB','BAMLH0A3HYC'],
+  curve: ['T10Y2Y','T10Y3M','T10YFF'],
+};
+
+const SHORT_WINDOW_YEARS = 10;
+const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+
+let latest = null;
+let SERIES = [];
+const historyCache = {};   // id -> Promise<[{date, value}]> in display units
+let historyChart = null;
+let singleChart = null;
+let activeTab = 'BAMLH0A0HYM2';
+let historyView = 'key';
+const isPhone = () => window.matchMedia('(max-width: 600px)').matches;
+
+function showError(msg) { const el = document.getElementById('error-msg'); el.textContent = msg; el.classList.add('visible'); }
+function hideError() { document.getElementById('error-msg').classList.remove('visible'); }
+
+function getZoneColor(pct) {
+  if (pct <= 25) return { color: 'var(--green)', bg: 'var(--green-dim)', label: 'CLEAR' };
+  if (pct <= 50) return { color: 'var(--yellow)', bg: 'var(--yellow-dim)', label: 'WATCH' };
+  if (pct <= 75) return { color: 'var(--orange)', bg: 'var(--orange-dim)', label: 'CAUTION' };
+  return { color: 'var(--red)', bg: 'var(--red-dim)', label: 'DANGER' };
+}
+
+function fmtMonth(iso) { const [y, m] = iso.split('-'); return `${MONTHS[+m - 1]} '${y.slice(2)}`; }
+function fmtVal(s, v) { return s.unit === '%' ? v.toFixed(2) : v.toFixed(0); }
+
+function fmtChange(s, diff) {
+  if (diff === null || diff === undefined) return '—';
+  const shown = fmtVal(s, Math.abs(diff));
+  if (+shown === 0) return `<span style="color:var(--text-muted)">0</span>`;
+  // Red = move toward more stress. For inverse-scored curve spreads that's a decline.
+  const worse = s.invert ? diff < 0 : diff > 0;
+  return `<span style="color:${worse ? 'var(--red)' : 'var(--green)'}">${diff > 0 ? '+' : '−'}${shown}</span>`;
+}
+
+function renderGrid(group) {
+  const items = SERIES.filter(s => s.group === group);
+  document.getElementById('grid-' + group).innerHTML = items.map(s => {
+    const zone = getZoneColor(s.stress);
+    const short = s.range_years < SHORT_WINDOW_YEARS;
+    const rangeTitle = `Percentile ranked against ${s.n_obs.toLocaleString()} observations, ${s.range_start} to ${s.range_end}`;
+    const unit = s.unit === '%' ? '%' : '';
+    return `<div class="spread-row" onclick="setActiveTab('${s.id}')" title="${s.id} · weight ${s.weight}/10 · as of ${s.date}">
+      <span class="spread-name">${s.name}<span class="spread-range${short ? ' short' : ''}" title="${rangeTitle}"><span class="rng-full">${fmtMonth(s.range_start)} – ${fmtMonth(s.range_end)}</span><span class="rng-short">since ${fmtMonth(s.range_start)}</span> · ${s.range_years}y</span></span>
+      <span class="spread-value">${fmtVal(s, s.value)}${unit}</span>
+      <span class="spread-change">${fmtChange(s, s.chg_1w)}</span>
+      <span class="spread-change">${fmtChange(s, s.chg_1m)}</span>
+      <span class="spread-pct" style="color:${zone.color}">${s.percentile}%</span>
+      <span class="sensitivity-bar-cell"><div class="sensitivity-bar"><div class="sensitivity-bar-fill" style="width:${s.weight * 10}%;background:${zone.color}"></div></div></span>
+    </div>`;
+  }).join('');
+  const badge = document.getElementById('badge-' + group);
+  const g = latest.groups[group];
+  if (!g) { badge.textContent = '—'; return; }
+  const z = getZoneColor(g.stress); badge.textContent = z.label; badge.style.background = z.bg; badge.style.color = z.color;
+}
+
+function renderComposite() {
+  const composite = latest.composite;
+  const scoreEl = document.getElementById('composite-score'); const zoneEl = document.getElementById('composite-zone'); const barEl = document.getElementById('score-bar');
+  const zone = getZoneColor(composite);
+  scoreEl.textContent = composite; scoreEl.style.color = zone.color; zoneEl.textContent = zone.label; zoneEl.style.color = zone.color;
+  barEl.style.width = composite + '%';
+  if (composite <= 25) barEl.style.background = 'var(--green)';
+  else if (composite <= 50) barEl.style.background = 'linear-gradient(90deg,var(--green),var(--yellow))';
+  else if (composite <= 75) barEl.style.background = 'linear-gradient(90deg,var(--green),var(--yellow),var(--orange))';
+  else barEl.style.background = 'linear-gradient(90deg,var(--green),var(--yellow),var(--orange),var(--red))';
+}
+
+function renderAlerts() {
+  const chips = SERIES.filter(s => s.stress >= 75).map(s => {
+    const z = getZoneColor(s.stress);
+    return `<span class="alert-chip" style="background:${z.bg};color:${z.color}">⚠ ${s.name}: ${s.stress}th pctile</span>`;
+  });
+  document.getElementById('alerts').innerHTML = chips.length ? chips.join('') : '<span class="alert-chip" style="background:var(--green-dim);color:var(--green)">✓ No elevated spreads</span>';
+}
+
+function renderWindowNote() {
+  const short = SERIES.filter(s => s.range_years < SHORT_WINDOW_YEARS);
+  const el = document.getElementById('window-note');
+  if (!short.length) { el.classList.remove('visible'); return; }
+  const shortW = short.reduce((a, s) => a + s.weight, 0), totalW = SERIES.reduce((a, s) => a + s.weight, 0);
+  const minYears = Math.min(...short.map(s => s.range_years));
+  const since = short.map(s => s.range_start).sort()[0];
+  el.innerHTML = `<b>Short percentile window.</b> ${short.length} of ${SERIES.length} series (${Math.round(100 * shortW / totalW)}% of composite weight) are ranked against as little as ${minYears} years of history, starting ${fmtMonth(since)}. High percentiles there mean "wide vs. recent years", not "wide vs. past crises". The archive grows by one day each business day.`;
+  el.classList.add('visible');
+}
+
+// HISTORY (CSV archive, loaded on demand)
+function loadHistory(id) {
+  if (!historyCache[id]) {
+    const s = SERIES.find(x => x.id === id); const mult = s.unit === '%' ? 1 : 100;
+    historyCache[id] = fetch(`data/history/${id}.csv?v=${encodeURIComponent(latest.generated)}`)
+      .then(r => { if (!r.ok) throw new Error(r.status); return r.text(); })
+      .then(txt => txt.trim().split('\n').slice(1).map(line => { const [date, v] = line.split(','); return { date, value: parseFloat(v) * mult }; }).filter(d => !isNaN(d.value)))
+      .catch(e => { delete historyCache[id]; throw e; });
+  }
+  return historyCache[id];
+}
+
+const chartFont = () => ({ family: 'JetBrains Mono', size: isPhone() ? 9 : 10 });
+
+function drawEmpty(canvas, msg) {
+  const ctx = canvas.getContext('2d'); ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.fillStyle = '#5a6578'; ctx.font = '14px DM Sans'; ctx.textAlign = 'center';
+  ctx.fillText(msg, canvas.width / 2, canvas.height / 2);
+}
+
+function setHistoryView(view) {
+  historyView = view;
+  document.querySelectorAll('#hist-tabs .chart-tab').forEach(t => t.classList.remove('active'));
+  document.getElementById('hist-tab-' + view).classList.add('active');
+  renderHistoryChart();
+}
+
+async function renderHistoryChart() {
+  const view = historyView;
+  const canvas = document.getElementById('history-canvas');
+  const ids = HISTORY_VIEWS[view].filter(id => SERIES.some(s => s.id === id));
+  let results;
+  try { results = await Promise.all(ids.map(loadHistory)); }
+  catch (e) { if (historyChart) historyChart.destroy(); historyChart = null; drawEmpty(canvas, 'History unavailable'); return; }
+  if (view !== historyView) return;   // user switched tabs while loading
+  if (historyChart) historyChart.destroy();
+  const cutoff = new Date(); cutoff.setFullYear(cutoff.getFullYear() - 3);
+  const cutoffIso = cutoff.toISOString().slice(0, 10);
+  const maxPts = isPhone() ? 250 : 400;
+  // One shared, sorted date axis; each series is sampled on it so lines stay aligned
+  // even when series have different observation dates.
+  const maps = results.map(rows => new Map(rows.filter(d => d.date >= cutoffIso).map(d => [d.date, d.value])));
+  const allDates = [...new Set(maps.flatMap(m => [...m.keys()]))].sort();
+  const step = Math.max(1, Math.floor(allDates.length / maxPts));
+  const labels = allDates.filter((_, i) => i % step === 0 || i === allDates.length - 1);
+  const datasets = ids.map((id, k) => {
+    const s = SERIES.find(x => x.id === id);
+    return {
+      label: s.name + (s.unit === '%' ? ' (%)' : ' (bps)'),
+      data: labels.map(d => maps[k].has(d) ? maps[k].get(d) : null),
+      borderColor: COLORS[id], backgroundColor: 'transparent', borderWidth: 1.8, pointRadius: 0, tension: 0.15, spanGaps: true,
+    };
+  });
+  historyChart = new Chart(canvas.getContext('2d'), {
+    type: 'line', data: { labels, datasets },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: {
+        legend: { display: true, position: 'top', labels: { color: '#8b95a5', font: { family: 'DM Sans', size: isPhone() ? 10 : 11 }, boxWidth: 14, padding: isPhone() ? 8 : 16, usePointStyle: true, pointStyle: 'line' } },
+        tooltip: { backgroundColor: '#1a1f2e', titleColor: '#e2e8f0', bodyColor: '#e2e8f0', borderColor: '#2a3040', borderWidth: 1, padding: 10, mode: 'index', intersect: false, callbacks: { label: item => `${item.dataset.label}: ${item.raw.toFixed(Math.abs(item.raw) > 50 ? 0 : 2)}` } }
+      },
+      scales: {
+        x: { type: 'category', ticks: { color: '#5a6578', font: chartFont(), maxTicksLimit: isPhone() ? 5 : 12, maxRotation: 0, callback: function(val) { const d = this.getLabelForValue(val); return d ? d.slice(0, 7) : ''; } }, grid: { color: 'rgba(30,37,48,0.5)' } },
+        y: { ticks: { color: '#5a6578', font: chartFont() }, grid: { color: 'rgba(30,37,48,0.5)' } },
+      },
+      interaction: { intersect: false, mode: 'index' }
+    }
+  });
+}
+
+function renderSingleTabs() {
+  document.getElementById('chart-tabs').innerHTML = SERIES.map(s =>
+    `<button class="chart-tab${s.id === activeTab ? ' active' : ''}" onclick="setActiveTab('${s.id}')">${s.name}</button>`
+  ).join('');
+}
+
+function setActiveTab(id) { activeTab = id; renderSingleTabs(); renderSingleChart(); }
+
+async function renderSingleChart() {
+  const id = activeTab;
+  const canvas = document.getElementById('single-canvas');
+  const series = SERIES.find(s => s.id === id);
+  let data;
+  try { data = await loadHistory(id); }
+  catch (e) { if (singleChart) singleChart.destroy(); singleChart = null; drawEmpty(canvas, 'History unavailable'); return; }
+  if (id !== activeTab) return;
+  if (singleChart) singleChart.destroy();
+  const step = Math.max(1, Math.floor(data.length / (isPhone() ? 300 : 500)));
+  const sampled = data.filter((_, i) => i % step === 0 || i === data.length - 1);
+  const color = COLORS[id] || '#3b82f6';
+  singleChart = new Chart(canvas.getContext('2d'), {
+    type: 'line',
+    data: { labels: sampled.map(d => d.date), datasets: [{ data: sampled.map(d => d.value), borderColor: color, backgroundColor: color + '14', borderWidth: 1.5, pointRadius: 0, fill: true, tension: 0.1 }] },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false }, tooltip: { backgroundColor: '#1a1f2e', titleColor: '#e2e8f0', bodyColor: '#e2e8f0', borderColor: '#2a3040', borderWidth: 1, padding: 10, displayColors: false, callbacks: { label: item => `${series.name}: ${fmtVal(series, item.raw)} ${series.unit}` } } },
+      scales: {
+        x: { ticks: { color: '#5a6578', font: chartFont(), maxTicksLimit: isPhone() ? 5 : 10, maxRotation: 0, callback: function(val) { const d = this.getLabelForValue(val); return d ? d.slice(0, 7) : ''; } }, grid: { color: 'rgba(30,37,48,0.5)' } },
+        y: { ticks: { color: '#5a6578', font: chartFont() }, grid: { color: 'rgba(30,37,48,0.5)' } },
+      },
+      interaction: { intersect: false, mode: 'index' }
+    }
+  });
+}
+
+// LOAD ALL
+async function loadAll() {
+  hideError();
+  document.getElementById('spinner').classList.add('active');
+  document.getElementById('last-updated').textContent = 'Loading…';
+  try {
+    const r = await fetch('data/latest.json', { cache: 'no-cache' });
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    latest = await r.json();
+  } catch (e) {
+    document.getElementById('spinner').classList.remove('active');
+    showError(`Could not load data/latest.json (${e.message}).`);
+    document.getElementById('last-updated').textContent = 'Load failed';
+    return;
+  }
+  document.getElementById('spinner').classList.remove('active');
+  SERIES = latest.series;
+  for (const k of Object.keys(historyCache)) delete historyCache[k];
+
+  ['ig', 'hy', 'curve', 'global'].forEach(renderGrid);
+  renderComposite(); renderAlerts(); renderWindowNote();
+  renderSingleTabs(); renderHistoryChart(); renderSingleChart();
+
+  if (latest.failed && latest.failed.length) showError(`Last update could not reach FRED for: ${latest.failed.join(', ')}. Those rows show archived values.`);
+  const gen = new Date(latest.generated);
+  const genStr = gen.toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+  document.getElementById('last-updated').innerHTML = isPhone()
+    ? `Data thru ${latest.data_through}<br>Pulled ${genStr}`
+    : `Data through ${latest.data_through} · pulled ${genStr} · ${SERIES.length} series · FRED / ICE BofA`;
+}
+
+loadAll();
+</script>
+</body>
+</html>
