@@ -71,10 +71,13 @@ def ssl_context():
         return ssl.create_default_context()
 
 
-def fetch(series_id, key, ctx):
+def fetch(series_id, key, ctx, start=None):
     """Return {date: value_string} for every non-missing observation FRED serves."""
-    qs = urllib.parse.urlencode({"series_id": series_id, "api_key": key, "file_type": "json",
-                                 "sort_order": "asc", "limit": 100000})
+    params = {"series_id": series_id, "api_key": key, "file_type": "json",
+              "sort_order": "asc", "limit": 100000}
+    if start:
+        params["observation_start"] = start
+    qs = urllib.parse.urlencode(params)
     last_err = None
     for attempt in range(4):
         try:

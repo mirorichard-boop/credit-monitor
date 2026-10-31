@@ -46,6 +46,15 @@ jobs:
           FRED_API_KEY: ${{ secrets.FRED_API_KEY }}
         run: python scripts/fetch_fred.py
 
+      - name: Build liquidity regime data
+        if: steps.gate.outputs.run == 'true'
+        continue-on-error: true   # a liquidity failure must not block the credit data commit
+        env:
+          FRED_API_KEY: ${{ secrets.FRED_API_KEY }}
+        run: |
+          pip install --quiet pandas numpy
+          python scripts/fetch_liquidity.py
+
       - name: Commit changed data
         if: steps.gate.outputs.run == 'true'
         run: |
@@ -55,6 +64,6 @@ jobs:
           if git diff --cached --quiet; then
             echo "No data changes."
           else
-            git commit -m "Data update $(jq -r .data_through data/latest.json)"
+            git commit -m "Data update $(jq -r .data_through data/latest.json), liquidity $(jq -r '.phase + " " + (.lci|tostring)' data/liquidity.json)"
             git push
           fi

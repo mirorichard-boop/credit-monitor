@@ -1,0 +1,612 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#0d1117">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>Liquidity Regime Watch</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+  :root {
+    --bg: #0b0e11; --bg-card: #12161c; --bg-card-hover: #181d25; --bg-header: #0d1117;
+    --border: #1e2530; --border-light: #252d3a;
+    --text: #e2e8f0; --text-secondary: #8b95a5; --text-muted: #5a6578;
+    --green: #22c55e; --green-dim: rgba(34,197,94,0.12);
+    --yellow: #eab308; --yellow-dim: rgba(234,179,8,0.12);
+    --orange: #f97316; --orange-dim: rgba(249,115,22,0.12);
+    --red: #ef4444; --red-dim: rgba(239,68,68,0.12);
+    --blue: #3b82f6; --blue-dim: rgba(59,130,246,0.12);
+    --cyan: #06b6d4; --purple: #8b5cf6;
+    --radius: 8px; --radius-lg: 12px;
+    --font: 'DM Sans', -apple-system, sans-serif; --mono: 'JetBrains Mono', monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html { -webkit-text-size-adjust: 100%; }
+  body { font-family: var(--font); background: var(--bg); color: var(--text); min-height: 100vh; -webkit-font-smoothing: antialiased; overflow-x: hidden; }
+  a { color: var(--blue); text-decoration: none; }
+
+  .header { background: var(--bg-header); border-bottom: 1px solid var(--border); padding: 14px 24px; padding-top: max(14px, env(safe-area-inset-top)); display: flex; align-items: center; justify-content: space-between; gap: 12px; position: sticky; top: 0; z-index: 100; }
+  .header-left { display: flex; align-items: center; gap: 14px; min-width: 0; }
+  .logo { font-size: 17px; font-weight: 700; letter-spacing: -0.03em; display: flex; align-items: center; gap: 8px; white-space: nowrap; }
+  .logo-icon { width: 28px; height: 28px; background: linear-gradient(135deg, var(--purple), var(--cyan)); border-radius: 6px; display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 700; color: #fff; flex-shrink: 0; }
+  .nav { display: flex; gap: 4px; }
+  .nav a { font-size: 12px; font-weight: 500; padding: 5px 10px; border-radius: 5px; color: var(--text-muted); }
+  .nav a.active { background: var(--blue-dim); color: var(--blue); }
+  .nav a:hover:not(.active) { color: var(--text-secondary); }
+  .status-bar { font-size: 11px; color: var(--text-muted); font-family: var(--mono); text-align: right; }
+
+  .main { max-width: 1440px; margin: 0 auto; padding: 24px; }
+  .card { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-lg); min-width: 0; }
+  .card-h { padding: 12px 16px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+  .card-h h3 { font-size: 13px; font-weight: 600; letter-spacing: -0.01em; }
+  .card-h .sub { font-size: 11px; color: var(--text-muted); }
+  .card-b { padding: 16px; }
+  .eyebrow { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-muted); }
+
+  /* Hero */
+  .hero { display: grid; grid-template-columns: 1.35fr 1fr 1fr; gap: 18px; margin-bottom: 18px; }
+  .phase-card { padding: 22px 24px; border-left: 4px solid var(--text-muted); }
+  .phase-name { font-size: 40px; font-weight: 700; letter-spacing: -0.03em; line-height: 1.05; margin: 6px 0 4px; }
+  .phase-since { font-size: 12px; color: var(--text-muted); font-family: var(--mono); }
+  .phase-desc { font-size: 13.5px; line-height: 1.55; color: var(--text-secondary); margin-top: 12px; }
+  .pending { margin-top: 14px; padding: 10px 12px; border-radius: var(--radius); font-size: 12.5px; line-height: 1.5; background: var(--orange-dim); border: 1px solid rgba(249,115,22,0.25); color: var(--text-secondary); }
+  .pending b { color: var(--orange); }
+  .gauge-card { padding: 20px 22px; display: flex; flex-direction: column; gap: 8px; }
+  .gauge-val { font-size: 52px; font-weight: 700; font-family: var(--mono); letter-spacing: -0.04em; line-height: 1; }
+  .gauge-meta { font-size: 12px; color: var(--text-secondary); font-family: var(--mono); line-height: 1.6; }
+  .track { height: 8px; background: var(--bg); border-radius: 4px; position: relative; margin-top: 6px; }
+  .track-fill { position: absolute; top: 0; bottom: 0; left: 0; border-radius: 4px; }
+  .track-mid { position: absolute; top: -3px; bottom: -3px; left: 50%; width: 1px; background: var(--text-muted); }
+  .track-labels { display: flex; justify-content: space-between; font-size: 10px; color: var(--text-muted); margin-top: 4px; text-transform: uppercase; letter-spacing: 0.05em; }
+
+  .stats { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; margin-bottom: 18px; }
+  .stat { padding: 14px 16px; }
+  .stat-v { font-family: var(--mono); font-size: 22px; font-weight: 500; margin-top: 4px; letter-spacing: -0.02em; }
+  .stat-s { font-family: var(--mono); font-size: 11px; margin-top: 3px; color: var(--text-secondary); }
+
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; margin-bottom: 18px; }
+  .grid-clock { display: grid; grid-template-columns: 380px 1fr; gap: 18px; margin-bottom: 18px; }
+
+  .chart-box { padding: 12px 14px; height: 340px; position: relative; }
+  .chart-box.tall { height: 400px; }
+  canvas { width: 100% !important; height: 100% !important; }
+  .legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: 11px; color: var(--text-secondary); }
+  .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 5px; vertical-align: -1px; }
+  .tabs { display: flex; gap: 2px; padding: 10px 14px; border-bottom: 1px solid var(--border); flex-wrap: wrap; }
+  .tab { font-family: var(--font); font-size: 11px; font-weight: 500; padding: 4px 10px; border-radius: 4px; border: none; background: transparent; color: var(--text-muted); cursor: pointer; }
+  .tab:hover { color: var(--text-secondary); background: rgba(255,255,255,0.03); }
+  .tab.active { background: var(--blue-dim); color: var(--blue); }
+  .explain { padding: 0 16px 14px; font-size: 12px; line-height: 1.55; color: var(--text-secondary); }
+
+  /* Tripwires */
+  .tw-row { display: grid; grid-template-columns: 14px minmax(0,1.5fr) 90px minmax(0,2.6fr); gap: 10px; align-items: start; padding: 9px 16px; border-bottom: 1px solid rgba(30,37,48,0.5); font-size: 12.5px; }
+  .tw-row:last-child { border-bottom: none; }
+  .dot { width: 9px; height: 9px; border-radius: 50%; margin-top: 4px; }
+  .tw-name { font-weight: 500; }
+  .tw-val { font-family: var(--mono); text-align: right; }
+  .tw-detail { color: var(--text-muted); font-size: 11.5px; line-height: 1.45; }
+  .tw-count { display: flex; gap: 8px; }
+  .pill { font-size: 10px; font-weight: 600; padding: 2px 8px; border-radius: 4px; text-transform: uppercase; letter-spacing: 0.04em; font-family: var(--mono); }
+
+  /* Components */
+  .comp { display: grid; grid-template-columns: minmax(0,1.6fr) 70px minmax(0,1fr); gap: 10px; align-items: center; padding: 7px 16px; font-size: 12.5px; }
+  .comp-val { font-family: var(--mono); text-align: right; color: var(--text-secondary); font-size: 12px; }
+  .zbar { height: 10px; position: relative; background: var(--bg); border-radius: 3px; }
+  .zbar-mid { position: absolute; left: 50%; top: -2px; bottom: -2px; width: 1px; background: var(--text-muted); }
+  .zbar-fill { position: absolute; top: 0; bottom: 0; border-radius: 3px; }
+  .comp-h { padding: 10px 16px 4px; }
+
+  /* Nexus */
+  .nexus { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .nx { border: 1px solid var(--border); border-radius: var(--radius); padding: 12px; }
+  .nx h4 { font-size: 12px; font-weight: 600; margin-bottom: 4px; }
+  .nx p { font-size: 11.5px; color: var(--text-muted); line-height: 1.45; margin-bottom: 8px; }
+  .nx-sig { display: flex; justify-content: space-between; font-size: 12px; font-family: var(--mono); padding: 3px 0; }
+  .curve-kind { font-size: 22px; font-weight: 700; letter-spacing: -0.02em; margin: 4px 0; }
+
+  /* Backtest */
+  .bt { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+  .bt th { font-size: 10px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; text-align: right; padding: 8px 10px; background: rgba(0,0,0,0.15); white-space: nowrap; }
+  .bt th:first-child, .bt td:first-child { text-align: left; }
+  .bt td { font-family: var(--mono); text-align: right; padding: 8px 10px; border-bottom: 1px solid rgba(30,37,48,0.5); white-space: nowrap; }
+  .bt tr.now td { background: rgba(255,255,255,0.03); }
+  .bt-wrap { overflow-x: auto; }
+
+  .methodology { padding: 18px 22px; margin-bottom: 24px; }
+  .methodology summary { font-size: 13px; font-weight: 600; cursor: pointer; color: var(--text-secondary); list-style: none; display: flex; align-items: center; gap: 8px; }
+  .methodology summary::-webkit-details-marker { display: none; }
+  .methodology summary::before { content: '▸'; transition: transform 0.2s; }
+  .methodology[open] summary::before { transform: rotate(90deg); }
+  .mcontent { margin-top: 14px; font-size: 13px; line-height: 1.7; color: var(--text-secondary); columns: 2; column-gap: 32px; }
+  .mcontent h4 { font-size: 12px; font-weight: 600; color: var(--text); text-transform: uppercase; letter-spacing: 0.04em; margin: 12px 0 4px; break-after: avoid; }
+  .mcontent h4:first-child { margin-top: 0; }
+  .mcontent p { margin-bottom: 8px; }
+  .mcontent li { margin-left: 16px; }
+
+  .error-msg { background: var(--red-dim); border: 1px solid rgba(239,68,68,0.3); border-radius: var(--radius); padding: 12px 16px; font-size: 13px; color: var(--red); margin-bottom: 16px; display: none; }
+  .error-msg.visible { display: block; }
+
+  @media (max-width: 1100px) {
+    .hero { grid-template-columns: 1fr 1fr; }
+    .phase-card { grid-column: 1 / -1; }
+    .stats { grid-template-columns: repeat(3, 1fr); }
+    .grid-clock { grid-template-columns: 1fr; }
+  }
+  @media (max-width: 760px) {
+    .grid2 { grid-template-columns: 1fr; }
+    .mcontent { columns: 1; }
+  }
+  @media (max-width: 600px) {
+    .main { padding: 12px 12px 24px; }
+    .header { padding: 10px 14px; padding-top: max(10px, env(safe-area-inset-top)); }
+    .logo-text-long { display: none; }
+    .status-bar { display: none; }
+    .hero { grid-template-columns: 1fr; }
+    .phase-name { font-size: 32px; }
+    .gauge-val { font-size: 42px; }
+    .stats { grid-template-columns: 1fr 1fr; }
+    .tw-row { grid-template-columns: 12px minmax(0,1fr) 74px; }
+    .tw-detail { grid-column: 2 / -1; }
+    .nexus { grid-template-columns: 1fr; }
+    .chart-box { height: 280px; padding: 8px; }
+    .chart-box.tall { height: 320px; }
+  }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="header-left">
+    <div class="logo"><div class="logo-icon">GL</div>Liquidity<span class="logo-text-long">&nbsp;Regime Watch</span></div>
+    <nav class="nav"><a href="index.html">Credit</a><a href="liquidity.html" class="active">Liquidity</a></nav>
+  </div>
+  <span class="status-bar" id="updated">Loading…</span>
+</div>
+
+<div class="main">
+  <div class="error-msg" id="error-msg"></div>
+
+  <div class="hero">
+    <div class="card phase-card" id="phase-card">
+      <div class="eyebrow">Liquidity cycle phase (confirmed)</div>
+      <div class="phase-name" id="phase-name">—</div>
+      <div class="phase-since" id="phase-since"></div>
+      <div class="phase-desc" id="phase-desc"></div>
+      <div class="pending" id="pending" style="display:none"></div>
+    </div>
+    <div class="card gauge-card">
+      <div class="eyebrow">Liquidity Cycle Index</div>
+      <div class="gauge-val" id="lci-val">—</div>
+      <div class="track"><div class="track-fill" id="lci-fill"></div><div class="track-mid"></div></div>
+      <div class="track-labels"><span>Contracting</span><span>Trend</span><span>Expanding</span></div>
+      <div class="gauge-meta" id="lci-meta"></div>
+    </div>
+    <div class="card gauge-card">
+      <div class="eyebrow">Plumbing Stress</div>
+      <div class="gauge-val" id="stress-val">—</div>
+      <div class="track"><div class="track-fill" id="stress-fill"></div><div class="track-mid"></div></div>
+      <div class="track-labels"><span>Calm</span><span>Normal</span><span>Strained</span></div>
+      <div class="gauge-meta" id="stress-meta"></div>
+    </div>
+  </div>
+
+  <div class="stats" id="stats"></div>
+
+  <div class="grid-clock">
+    <div class="card">
+      <div class="card-h"><h3>Cycle clock</h3><span class="sub">last 104 weeks</span></div>
+      <div class="chart-box"><canvas id="clock"></canvas></div>
+      <div class="explain">Horizontal: index level vs. trend (50). Vertical: 26-week change in the smoothed index. Howell's cycle runs counter-clockwise: Rebound → Calm → Speculation → Turbulence. The bright dot is this week.</div>
+    </div>
+    <div class="card">
+      <div class="card-h"><h3>Liquidity Cycle Index vs. S&amp;P 500</h3>
+        <div class="legend"><span><i style="background:var(--blue)"></i>Rebound</span><span><i style="background:var(--green)"></i>Calm</span><span><i style="background:var(--orange)"></i>Speculation</span><span><i style="background:var(--red)"></i>Turbulence</span></div></div>
+      <div class="tabs" id="range-tabs"></div>
+      <div class="chart-box tall"><canvas id="main"></canvas></div>
+    </div>
+  </div>
+
+  <div class="grid2">
+    <div class="card">
+      <div class="card-h"><h3>Tripwires</h3><div class="tw-count" id="tw-count"></div></div>
+      <div id="tripwires"></div>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:18px;min-width:0">
+      <div class="card">
+        <div class="card-h"><h3>Debt ↔ liquidity nexus</h3><span class="sub">13-week changes</span></div>
+        <div class="card-b"><div class="nexus" id="nexus"></div></div>
+      </div>
+      <div class="card">
+        <div class="card-h"><h3>Yield-curve regime</h3><span class="sub">13 weeks</span></div>
+        <div class="card-b" id="curve"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="grid2">
+    <div class="card">
+      <div class="card-h"><h3>What's driving the index</h3><span class="sub">rolling 5-year z-scores, signed so right = easier</span></div>
+      <div id="lci-comps"></div>
+    </div>
+    <div class="card">
+      <div class="card-h"><h3>What's driving stress</h3><span class="sub">right = more stress</span></div>
+      <div id="stress-comps"></div>
+    </div>
+  </div>
+
+  <div class="card" style="margin-bottom:18px">
+    <div class="card-h"><h3>Does the phase call matter? Forward returns by phase</h3><span class="sub" id="bt-sub"></span></div>
+    <div class="bt-wrap"><table class="bt" id="bt"></table></div>
+    <div class="explain" id="bt-note" style="padding-top:12px"></div>
+  </div>
+
+  <div class="card" style="margin-bottom:18px">
+    <div class="card-h"><h3>Explorer</h3><span class="sub" id="ex-sub"></span></div>
+    <div class="tabs" id="ex-tabs"></div>
+    <div class="chart-box"><canvas id="explorer"></canvas></div>
+    <div class="explain" id="ex-note"></div>
+  </div>
+
+  <details class="card methodology">
+    <summary>Methodology, sources, and where this differs from CrossBorder</summary>
+    <div class="mcontent">
+      <h4>What this is</h4>
+      <p>A public-data proxy for Michael Howell's global liquidity framework (CrossBorder Capital, <i>Capital Wars</i>). CrossBorder's Global Liquidity Index covers ~90 financial systems, including shadow banks and cross-border flows, and is a paid product. This page rebuilds the parts visible in free data and runs them through his cycle logic.</p>
+      <h4>Liquidity Cycle Index (quantities)</h4>
+      <p>Howell's model uses quantities only; he treats bond volatility and spreads as outputs. Inputs, each a rolling 5-year z-score:</p>
+      <ul>
+        <li>Fed net liquidity (balance sheet − Treasury General Account − reverse repo), 26-week % change, weight 2</li>
+        <li>G3 central-bank liquidity (Fed net + ECB + BoJ in USD), 52-week % change, weight 2</li>
+        <li>Bank reserves, 26-week % change, weight 1</li>
+        <li>"Treasury QE": bills as a share of marketable debt, 52-week change, weight 1. Shorter issuance adds liquidity, because liquidity ≈ size ÷ duration.</li>
+        <li>Broad dollar, 26-week % change, inverted, weight 1 (stands in for cross-border flows)</li>
+      </ul>
+      <p>The weighted z-score is mapped to 0–100 through the normal CDF. 50 is trend. The headline is a 13-week average.</p>
+      <h4>Phases</h4>
+      <p>Level above or below 50, crossed with the direction of the 26-week change: Rebound (below, rising), Calm (above, rising), Speculation (above, falling), Turbulence (below, falling). A new phase is adopted only after the raw signal has held for 6 straight weeks. Without that rule the phase flips every few weeks; with it, phases average ~33 weeks.</p>
+      <h4>Plumbing stress (prices)</h4>
+      <p>MOVE (weight 1.5), SOFR − IORB, 13-week change in Baa − 10Y, Chicago Fed NFCI, and VIX (weight 0.5). This measures how hard the system is straining to roll its debt, kept separate from the liquidity cycle.</p>
+      <h4>Debt ↔ liquidity nexus</h4>
+      <p>From Howell (BTC Sessions, Oct 2026). If debt can't be turned into liquidity, MOVE spikes and SOFR spreads widen. If liquidity can't be turned into debt, term premia compress and credit spreads widen. Either one firing is a refinancing squeeze.</p>
+      <h4>Known gaps</h4>
+      <ul>
+        <li>No PBoC. Howell says US and Chinese cycles have run in opposite phase since ~2020, so a G3 proxy can read differently from his global number.</li>
+        <li>No private-sector or shadow-bank balance sheets.</li>
+        <li>The debt/liquidity ratio here is US federal debt ÷ G3 central-bank liquidity. Its level is not comparable to Howell's global ~2× equilibrium, so only its percentile is meaningful.</li>
+        <li>The 0–100 scaling uses the full-sample spread of the composite. That changes scale, not ranking, but the backtest is not strictly out of sample.</li>
+      </ul>
+      <h4>Data</h4>
+      <p>FRED (H.4.1, ECB, BoJ, FX, rates, Kim-Wright term premium, NFCI, Coinbase BTC). Yahoo Finance (MOVE, gold, copper, S&amp;P 500). Treasury Fiscal Data (Monthly Statement of the Public Debt). Updated weekdays by GitHub Actions.</p>
+      <h4>Howell sources used</h4>
+      <ul>
+        <li><a href="https://www.youtube.com/watch?v=9QniqDBjUUs" target="_blank" rel="noopener">Pinnacle Digest, Oct 23 2026</a>: refinancing, crowding-out, BTC $70k</li>
+        <li><a href="https://www.youtube.com/watch?v=Tzyifqs-Bg0" target="_blank" rel="noopener">BTC Sessions, Oct 2026</a>: nexus diagnostics, SOFR danger line</li>
+        <li><a href="https://www.youtube.com/watch?v=DGXwhWQ8hm8" target="_blank" rel="noopener">Bitcoin Magazine, Oct 19 2026</a>: Treasury QE, bill share → 30%</li>
+        <li><a href="https://www.youtube.com/watch?v=sR8fFcqLPU8" target="_blank" rel="noopener">Triangle Investor, Sep 2026</a>: collateral haircuts, Japan</li>
+        <li><a href="https://www.youtube.com/watch?v=i0lm-mmBlQM" target="_blank" rel="noopener">Monetary Matters, Mar 2026</a>: phase/asset map, 65-month cycle</li>
+        <li><a href="https://capitalwars.substack.com/" target="_blank" rel="noopener">Capital Wars Substack</a> · <a href="https://www.glindexes.com/" target="_blank" rel="noopener">GL Indexes</a></li>
+      </ul>
+    </div>
+  </details>
+</div>
+
+<script>
+const PHASE_COLOR = { REBOUND: '#3b82f6', CALM: '#22c55e', SPECULATION: '#f97316', TURBULENCE: '#ef4444' };
+const PHASE_DIM = { REBOUND: 'rgba(59,130,246,0.10)', CALM: 'rgba(34,197,94,0.10)', SPECULATION: 'rgba(249,115,22,0.11)', TURBULENCE: 'rgba(239,68,68,0.10)' };
+const STATUS = { ok: ['var(--green)', 'OK'], watch: ['var(--yellow)', 'Watch'], alert: ['var(--red)', 'Alert'], na: ['var(--text-muted)', 'n/a'] };
+const isPhone = () => window.matchMedia('(max-width: 600px)').matches;
+const mono = () => ({ family: 'JetBrains Mono', size: isPhone() ? 9 : 10 });
+const title = s => s.charAt(0) + s.slice(1).toLowerCase();
+const sgn = (v, d = 1) => v == null ? 'n/a' : (v > 0 ? '+' : v < 0 ? '−' : '') + Math.abs(v).toFixed(d);
+let D, S, charts = {}, mainRange = '10Y', exTab = 'fed';
+
+Chart.defaults.color = '#5a6578';
+Chart.defaults.borderColor = 'rgba(30,37,48,0.6)';
+
+function stressColor(v) { return v >= 75 ? 'var(--red)' : v >= 60 ? 'var(--orange)' : v >= 40 ? 'var(--yellow)' : 'var(--green)'; }
+function lciColor(v) { return v >= 60 ? 'var(--green)' : v >= 50 ? '#86efac' : v >= 40 ? 'var(--orange)' : 'var(--red)'; }
+
+function renderHero() {
+  const ph = D.phase, c = PHASE_COLOR[ph];
+  document.getElementById('phase-card').style.borderLeftColor = c;
+  const pn = document.getElementById('phase-name'); pn.textContent = title(ph); pn.style.color = c;
+  document.getElementById('phase-since').textContent = `since ${D.phase_since} · data through ${D.data_through}`;
+  document.getElementById('phase-desc').textContent = D.phase_desc;
+
+  const pend = document.getElementById('pending'), pr = D.projection;
+  let msg = '';
+  if (D.signal !== D.phase) {
+    msg = `<b>Pending: ${title(D.signal)}.</b> The raw signal has read ${title(D.signal)} for ${D.signal_weeks} week${D.signal_weeks === 1 ? '' : 's'}; the phase changes at ${D.confirm_weeks}.`;
+  } else if (pr.weeks_to_momentum_flip || pr.weeks_to_cross_50) {
+    const parts = [];
+    if (pr.weeks_to_momentum_flip) parts.push(`the 26-week direction turns ${D.lci_mom > 0 ? 'negative' : 'positive'} in <b>${pr.weeks_to_momentum_flip} weeks</b>`);
+    if (pr.weeks_to_cross_50) parts.push(`the index crosses 50 in <b>${pr.weeks_to_cross_50} weeks</b>`);
+    const next = D.lci >= 50 ? (D.lci_mom > 0 ? 'Speculation' : 'Calm') : (D.lci_mom > 0 ? 'Turbulence' : 'Rebound');
+    msg = `<b>Turn ahead.</b> If the weekly index holds at ${pr.hold_at}, ${parts.join(' and ')}. That starts a ${next} signal, adopted ${D.confirm_weeks} weeks later if it holds.`;
+  }
+  if (msg) { pend.innerHTML = msg; pend.style.display = 'block'; }
+
+  const lv = document.getElementById('lci-val'); lv.textContent = D.lci.toFixed(0); lv.style.color = lciColor(D.lci);
+  const lf = document.getElementById('lci-fill'); lf.style.width = D.lci + '%'; lf.style.background = lciColor(D.lci);
+  document.getElementById('lci-meta').innerHTML =
+    `26w direction ${sgn(D.lci_mom)} · this week (raw) ${D.lci_raw.toFixed(0)}<br>13w ago ${D.lci_13w_ago.toFixed(0)} · 52w high ${D.lci_52w_high.toFixed(0)}`;
+
+  const sv = document.getElementById('stress-val'); sv.textContent = D.stress.toFixed(0); sv.style.color = stressColor(D.stress);
+  const sf = document.getElementById('stress-fill'); sf.style.width = D.stress + '%'; sf.style.background = stressColor(D.stress);
+  document.getElementById('stress-meta').innerHTML = `13w ago ${D.stress_13w_ago.toFixed(0)} (${sgn(D.stress - D.stress_13w_ago, 0)})<br>MOVE ${D.headline.move} · SOFR−IORB ${sgn(S.repo.at(-1), 0)} bp`;
+}
+
+function renderStats() {
+  const h = D.headline;
+  const btcGap = 100 * (h.btc / 70000 - 1);
+  const stats = [
+    ['Fed net liquidity', `$${h.fed_net.toFixed(2)}T`, `${sgn(h.fed_mom)}% 13w`, h.fed_mom < 0 ? 'var(--red)' : 'var(--green)'],
+    ['G3 CB liquidity', `$${h.g3.toFixed(1)}T`, `${sgn(h.g3_mom)}% 52w`, h.g3_mom < 0 ? 'var(--red)' : 'var(--green)'],
+    ['MOVE', h.move.toFixed(0), h.move >= 120 ? 'stress' : h.move >= 100 ? 'haircuts rising' : 'below 100', h.move >= 100 ? 'var(--orange)' : 'var(--green)'],
+    ['Debt / liquidity', `${h.debt_liq.toFixed(2)}×`, `${h.debt_liq_pct}th pctile since 2005`, h.debt_liq_pct >= 80 ? 'var(--orange)' : 'var(--text-secondary)'],
+    ['Bitcoin', `$${Math.round(h.btc / 1000)}k`, `${sgn(btcGap, 0)}% vs $70k line`, btcGap < 0 ? 'var(--red)' : btcGap < 10 ? 'var(--yellow)' : 'var(--green)'],
+  ];
+  document.getElementById('stats').innerHTML = stats.map(([k, v, s, c]) =>
+    `<div class="card stat"><div class="eyebrow">${k}</div><div class="stat-v">${v}</div><div class="stat-s" style="color:${c}">${s}</div></div>`).join('');
+}
+
+function renderTripwires() {
+  const tw = D.tripwires;
+  const order = { alert: 0, watch: 1, ok: 2, na: 3 };
+  const sorted = [...tw].sort((a, b) => order[a.status] - order[b.status]);
+  document.getElementById('tripwires').innerHTML = sorted.map(t => {
+    const [c] = STATUS[t.status];
+    return `<div class="tw-row"><div class="dot" style="background:${c}"></div><div class="tw-name">${t.name}</div><div class="tw-val" style="color:${c}">${t.value}</div><div class="tw-detail">${t.detail}</div></div>`;
+  }).join('');
+  const n = s => tw.filter(t => t.status === s).length;
+  document.getElementById('tw-count').innerHTML = ['alert', 'watch', 'ok'].map(s =>
+    `<span class="pill" style="background:${STATUS[s][0].replace(')', '-dim)').replace('var(--', 'var(--')};color:${STATUS[s][0]}">${n(s)} ${STATUS[s][1]}</span>`).join('');
+}
+
+function renderNexus() {
+  const nx = D.nexus;
+  const box = (k, h, p) => {
+    const b = nx[k], hot = b.score > 0, c = b.score === 2 ? 'var(--red)' : hot ? 'var(--orange)' : 'var(--green)';
+    return `<div class="nx" style="border-color:${hot ? c : 'var(--border)'}"><h4 style="color:${c}">${h} · ${b.score}/2</h4><p>${p}</p>${b.signals.map(s =>
+      `<div class="nx-sig"><span style="color:var(--text-secondary)">${s.name}</span><span style="color:${s.on ? c : 'var(--text-muted)'}">${sgn(s.value, 0)}</span></div>`).join('')}</div>`;
+  };
+  document.getElementById('nexus').innerHTML =
+    box('debt_to_liq', 'Debt → liquidity jam', 'Collateral can\'t be turned into funding. Shows up as bond vol and repo spreads.') +
+    box('liq_to_debt', 'Liquidity → debt jam', 'Cash won\'t go into credit. Shows up as compressing term premia and widening spreads.');
+  const cv = D.curve;
+  const cc = cv.kind === 'Bull steepener' ? 'var(--green)' : cv.kind === 'Bull flattener' ? 'var(--blue)' : cv.kind === 'Bear flattener' ? 'var(--orange)' : 'var(--red)';
+  document.getElementById('curve').innerHTML = `<div class="eyebrow">10Y ${sgn(cv.d10_bps, 0)} bp · 2s10s ${sgn(cv.dcurve_bps, 0)} bp</div>
+    <div class="curve-kind" style="color:${cc}">${cv.kind}</div><div style="font-size:12.5px;color:var(--text-secondary);line-height:1.5">${cv.note}</div>
+    <div style="font-size:11.5px;color:var(--text-muted);margin-top:8px">Howell's expected order: bear flattening → bull flattening → steepening (risk-on).</div>`;
+}
+
+function renderComps(id, list, stress) {
+  const fmt = c => {
+    if (c.value == null) return 'n/a';
+    if (['move', 'vix'].includes(c.key)) return c.value.toFixed(0);
+    if (c.key === 'nfci') return sgn(c.value, 2);
+    if (['repo', 'credit'].includes(c.key)) return sgn(c.value, 0) + ' bp';
+    if (c.key === 'bills') return sgn(c.value, 2) + ' pt';
+    return sgn(c.value) + '%';
+  };
+  document.getElementById(id).innerHTML = `<div class="comp-h eyebrow" style="display:grid;grid-template-columns:minmax(0,1.6fr) 70px minmax(0,1fr);gap:10px"><span>Input · weight</span><span style="text-align:right">Now</span><span style="text-align:center">−3σ … +3σ</span></div>` +
+    list.map(c => {
+      const z = c.z ?? 0;   // already signed by the pipeline
+      const good = stress ? z < 0 : z > 0;
+      const w = Math.min(50, Math.abs(z) / 3 * 50);
+      const col = Math.abs(z) < 0.5 ? 'var(--text-muted)' : good ? 'var(--green)' : 'var(--red)';
+      const left = z >= 0 ? 50 : 50 - w;
+      return `<div class="comp"><span>${c.label} <span style="color:var(--text-muted);font-size:11px">· ${c.weight}</span></span><span class="comp-val">${fmt(c)}</span>
+        <div class="zbar" title="z = ${c.z == null ? 'n/a' : sgn(z, 2)}"><div class="zbar-mid"></div><div class="zbar-fill" style="left:${left}%;width:${w}%;background:${col}"></div></div></div>`;
+    }).join('') + '<div style="height:8px"></div>';
+}
+
+function renderBacktest() {
+  const rows = D.backtest;
+  const cell = (v, suffix = '%', invertGood = false) => {
+    if (v == null) return '<td>—</td>';
+    const good = invertGood ? v < 0 : v > 0;
+    return `<td style="color:${good ? 'var(--green)' : 'var(--red)'}">${sgn(v)}${suffix}</td>`;
+  };
+  document.getElementById('bt').innerHTML = `<tr><th>Phase</th><th>Weeks</th><th>S&amp;P 13w</th><th>S&amp;P 26w</th><th>S&amp;P 39w</th><th>S&amp;P hit 13w</th><th>S&amp;P worst-10% 13w</th><th>Gold 39w</th><th>BTC 39w</th><th>10Y yield 13w</th><th>Baa spread 13w</th></tr>` +
+    rows.map(r => `<tr class="${r.phase === D.phase ? 'now' : ''}"><td><span style="color:${PHASE_COLOR[r.phase]};font-family:var(--font);font-weight:600">${title(r.phase)}</span>${r.phase === D.phase ? ' <span class="pill" style="background:rgba(255,255,255,0.06);color:var(--text-secondary)">now</span>' : ''}</td>
+      <td>${r.weeks}</td>${cell(r.spx_13)}${cell(r.spx_26)}${cell(r.spx_39)}<td>${r.spx_hit ?? '—'}%</td>${cell(r.spx_13_p10)}${cell(r.gold_39)}${cell(r.btc_39)}
+      ${r.ust10_13 == null ? '<td>—</td>' : `<td style="color:${r.ust10_13 > 0 ? 'var(--green)' : 'var(--red)'}">${sgn(-r.ust10_13, 0)} bp</td>`}${cell(r.credit_13, ' bp', true)}</tr>`).join('');
+  const sp = Object.fromEntries(rows.map(r => [r.phase, r]));
+  document.getElementById('bt-sub').textContent = `weekly, ${D.series.dates[0].slice(0, 4)}–${D.data_through.slice(0, 4)}, phase as known that week`;
+  document.getElementById('bt-note').innerHTML =
+    `Read across a row: what happened next, on average, from weeks the model was in that phase. Calm has been the best equity phase (S&amp;P ${sgn(sp.CALM.spx_26)}% over 26 weeks vs. ${sgn(sp.SPECULATION.spx_26)}% in Speculation). Speculation is where crypto breaks down (BTC ${sgn(sp.SPECULATION.btc_39, 0)}% over 39 weeks). Yields have tended to rise in Calm and fall in Rebound, as Howell describes. Overlapping windows make these averages less independent than the week counts suggest; treat them as direction, not precision. Bitcoin history starts Dec 2014.`;
+}
+
+// Phase background bands as a Chart.js plugin
+const bandPlugin = {
+  id: 'bands',
+  beforeDatasetsDraw(chart, _, opts) {
+    if (!opts.labels) return;
+    const { ctx, chartArea: a, scales: { x } } = chart;
+    ctx.save();
+    const labels = opts.labels, phases = opts.phases;
+    let start = 0;
+    for (let i = 1; i <= labels.length; i++) {
+      if (i === labels.length || phases[i] !== phases[start]) {
+        if (phases[start]) {
+          const x0 = x.getPixelForValue(start), x1 = x.getPixelForValue(Math.min(i, labels.length - 1));
+          ctx.fillStyle = PHASE_DIM[phases[start]];
+          ctx.fillRect(x0, a.top, Math.max(1, x1 - x0), a.bottom - a.top);
+        }
+        start = i;
+      }
+    }
+    ctx.restore();
+  }
+};
+Chart.register(bandPlugin);
+
+function phaseSeries() {
+  // Expand episodes to per-week phases aligned to series dates.
+  const out = new Array(S.dates.length).fill(null);
+  let j = 0;
+  for (let i = 0; i < S.dates.length; i++) {
+    const d = S.dates[i];
+    while (j < D.episodes.length && D.episodes[j].end < d) j++;
+    if (j < D.episodes.length && D.episodes[j].start <= d) out[i] = D.episodes[j].phase;
+  }
+  return out;
+}
+
+function sliceFrom(years) {
+  if (!years) return 0;
+  const cut = new Date(D.data_through); cut.setFullYear(cut.getFullYear() - years);
+  const iso = cut.toISOString().slice(0, 10);
+  const i = S.dates.findIndex(d => d >= iso);
+  return Math.max(0, i);
+}
+
+const yearTicks = (labels) => ({
+  font: mono(), maxRotation: 0, autoSkip: false,
+  callback: (v, i) => { const d = labels[i], prev = labels[i - 1]; return d && prev && prev.slice(0, 4) !== d.slice(0, 4) ? d.slice(0, 4) : ''; }
+});
+
+function renderMain() {
+  const years = { '3Y': 3, '10Y': 10, 'All': 0 }[mainRange];
+  const from = sliceFrom(years);
+  const labels = S.dates.slice(from), ph = phaseSeries().slice(from);
+  if (charts.main) charts.main.destroy();
+  charts.main = new Chart(document.getElementById('main'), {
+    type: 'line',
+    data: { labels, datasets: [
+      { label: 'Liquidity Cycle Index', data: S.lci_smooth.slice(from), borderColor: '#e2e8f0', borderWidth: 2, pointRadius: 0, yAxisID: 'y', tension: 0.2 },
+      { label: 'Raw weekly', data: S.lci.slice(from), borderColor: 'rgba(139,149,165,0.35)', borderWidth: 1, pointRadius: 0, yAxisID: 'y' },
+      { label: 'S&P 500 (log)', data: S.spx.slice(from), borderColor: '#8b5cf6', borderWidth: 1.5, pointRadius: 0, yAxisID: 'y2' },
+    ] },
+    options: {
+      responsive: true, maintainAspectRatio: false, animation: false, interaction: { mode: 'index', intersect: false },
+      plugins: {
+        bands: { labels, phases: ph },
+        legend: { labels: { font: mono(), boxWidth: 10 } },
+        tooltip: { callbacks: { title: it => `${it[0].label} · ${ph[it[0].dataIndex] ? title(ph[it[0].dataIndex]) : ''}`,
+          label: c => `${c.dataset.label}: ${c.parsed.y == null ? 'n/a' : c.parsed.y.toLocaleString(undefined, { maximumFractionDigits: c.datasetIndex === 2 ? 0 : 1 })}` } }
+      },
+      scales: {
+        x: { ticks: yearTicks(labels), grid: { display: false } },
+        y: { min: 0, max: 100, ticks: { font: mono(), stepSize: 25 }, title: { display: !isPhone(), text: 'Index', font: mono() } },
+        y2: { type: 'logarithmic', position: 'right', grid: { display: false }, ticks: { font: mono(), callback: v => [1000, 2000, 3000, 5000, 7000, 10000].includes(v) ? v.toLocaleString() : '' } }
+      }
+    }
+  });
+}
+
+function renderRangeTabs() {
+  document.getElementById('range-tabs').innerHTML = ['3Y', '10Y', 'All'].map(r =>
+    `<button class="tab ${r === mainRange ? 'active' : ''}" onclick="mainRange='${r}';renderRangeTabs();renderMain()">${r}</button>`).join('');
+}
+
+function renderClock() {
+  const n = 104, end = S.dates.length;
+  const pts = [];
+  for (let i = end - n; i < end; i++) {
+    const l = S.lci_smooth[i], l0 = S.lci_smooth[i - 26];
+    if (l == null || l0 == null) continue;
+    pts.push({ x: l - 50, y: l - l0, d: S.dates[i] });
+  }
+  const lim = Math.max(30, ...pts.map(p => Math.abs(p.x)), ...pts.map(p => Math.abs(p.y))) * 1.1;
+  const quad = {
+    id: 'quad',
+    beforeDatasetsDraw(chart) {
+      const { ctx, chartArea: a, scales: { x, y } } = chart;
+      const cx = x.getPixelForValue(0), cy = y.getPixelForValue(0);
+      // Positive momentum plots upward, so Rebound/Calm are the top quadrants.
+      const real = [['TURBULENCE', a.left, cy, cx - a.left, a.bottom - cy, 'left', 'bottom'], ['SPECULATION', cx, cy, a.right - cx, a.bottom - cy, 'right', 'bottom'],
+                    ['CALM', cx, a.top, a.right - cx, cy - a.top, 'right', 'top'], ['REBOUND', a.left, a.top, cx - a.left, cy - a.top, 'left', 'top']];
+      ctx.save();
+      for (const [ph, x0, y0, w, h, ha, va] of real) {
+        ctx.fillStyle = PHASE_DIM[ph]; ctx.fillRect(x0, y0, w, h);
+        ctx.fillStyle = PHASE_COLOR[ph]; ctx.font = '600 10px DM Sans'; ctx.textAlign = ha; ctx.textBaseline = va;
+        ctx.fillText(ph, ha === 'left' ? x0 + 6 : x0 + w - 6, va === 'top' ? y0 + 6 : y0 + h - 6);
+      }
+      ctx.strokeStyle = '#5a6578'; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(cx, a.top); ctx.lineTo(cx, a.bottom); ctx.moveTo(a.left, cy); ctx.lineTo(a.right, cy); ctx.stroke();
+      ctx.restore();
+    }
+  };
+  if (charts.clock) charts.clock.destroy();
+  charts.clock = new Chart(document.getElementById('clock'), {
+    type: 'scatter',
+    data: { datasets: [{
+      data: pts, showLine: true, borderColor: 'rgba(226,232,240,0.25)', borderWidth: 1,
+      pointRadius: pts.map((_, i) => i === pts.length - 1 ? 6 : 2),
+      pointBackgroundColor: pts.map((_, i) => i === pts.length - 1 ? '#fff' : `rgba(139,149,165,${0.15 + 0.7 * i / pts.length})`),
+      pointBorderColor: pts.map((_, i) => i === pts.length - 1 ? PHASE_COLOR[D.phase] : 'transparent'), pointBorderWidth: 2,
+    }] },
+    options: {
+      responsive: true, maintainAspectRatio: false, animation: false,
+      plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => `${pts[c.dataIndex].d}: level ${(c.parsed.x + 50).toFixed(0)}, 26w ${sgn(c.parsed.y)}` } } },
+      scales: { x: { min: -lim, max: lim, ticks: { font: mono(), callback: v => (v + 50).toFixed(0) }, grid: { display: false } },
+                y: { min: -lim, max: lim, ticks: { font: mono() }, grid: { display: false } } }
+    },
+    plugins: [quad]
+  });
+}
+
+const EX = {
+  fed:   { label: 'Fed net liquidity', a: ['fed_net', 'Fed net liquidity ($T)', '#06b6d4'], b: ['spx', 'S&P 500 (log)', '#8b5cf6', 'log'], note: 'Fed balance sheet less the Treasury General Account and the reverse-repo facility. Howell calls this the active part of the balance sheet. Draining TGA or RRP adds liquidity even with no QE.' },
+  g3:    { label: 'G3 central banks', a: ['g3', 'Fed net + ECB + BoJ ($T)', '#06b6d4'], b: ['reserves', 'US bank reserves ($T)', '#eab308'], note: 'ECB and BoJ balance sheets translated at spot FX, so a falling dollar raises this even with no new assets. Howell puts the US reserve floor near $3T.' },
+  move:  { label: 'MOVE', a: ['move', 'MOVE', '#f97316'], b: ['term_premium', '10Y term premium (bp)', '#8b5cf6'], line: [100, 'haircuts widen'], note: 'Treasury implied vol. Howell: repo haircuts run ~2% (50× collateral multiplier) and go to 4–5% when vol jumps, cutting balance-sheet capacity by more than half. His term-premium change co-moves with liquidity.' },
+  repo:  { label: 'SOFR − IORB', a: ['repo', 'SOFR − IORB (bp)', '#ef4444'], line: [0, 'floor'], from: '2021-08-01', note: 'Normally slightly negative. When repo trades above what the Fed pays on reserves, reserves are scarce. Howell says his danger line was breached at end-2025, which forced the Fed into reserve-management purchases.' },
+  bills: { label: 'Treasury QE', a: ['bill_share', 'Bills % of marketable debt', '#22c55e'], b: ['dgs10', '10Y yield (%)', '#8b5cf6'], line: [30, 'Howell target ~30%'], note: 'Shorter issuance is stealth easing: bills are near-money for banks, and less duration supply lowers term premia. Howell: bill share is heading to ~30%.' },
+  usd:   { label: 'Dollar', a: ['usd', 'Broad dollar index', '#eab308'], b: ['cny', 'USD/CNY', '#ef4444'], note: 'A stronger dollar tightens offshore dollar liquidity. Howell sees the dollar as defensive and expected it to firm in H2 2026.' },
+  debt:  { label: 'Debt / liquidity', a: ['debt_liq', 'US federal debt ÷ G3 CB liquidity', '#f97316'], note: 'Howell\'s global ratio mean-reverts around 2×. Above means refinancing crises, below means asset bubbles. This US proxy is on a different scale, so read its direction and percentile, not the level.' },
+  btc:   { label: 'Bitcoin', a: ['btc', 'Bitcoin ($, log)', '#f97316', 'log'], line: [70000, '$70k'], from: '2015-01-01', note: 'Howell calls BTC the most liquidity-sensitive asset; liquidity explains ~40–45% of its variance. Bets are off below $70k.' },
+  gold:  { label: 'Gold & Cu/Au', a: ['gold', 'Gold ($/oz)', '#eab308'], b: ['cu_au', 'Copper/gold ×1000', '#06b6d4'], note: 'Gold tracks federal debt over the long run (~8.5%/yr since 1971 per Howell). The copper/gold ratio tracks real-economy demand against monetary hedges.' },
+  stress:{ label: 'Stress history', a: ['stress', 'Plumbing stress (0–100)', '#ef4444'], b: ['nfci', 'Chicago Fed NFCI', '#8b5cf6'], note: 'The price-side composite. Spikes mark the 2008, 2011, 2020 and 2022–23 squeezes.' },
+};
+
+function renderExTabs() {
+  document.getElementById('ex-tabs').innerHTML = Object.entries(EX).map(([k, v]) =>
+    `<button class="tab ${k === exTab ? 'active' : ''}" onclick="exTab='${k}';renderExTabs();renderExplorer()">${v.label}</button>`).join('');
+}
+
+function renderExplorer() {
+  const e = EX[exTab];
+  let from = e.from ? Math.max(0, S.dates.findIndex(d => d >= e.from)) : 0;
+  const labels = S.dates.slice(from), ph = phaseSeries().slice(from);
+  const ds = [{ label: e.a[1], data: S[e.a[0]].slice(from), borderColor: e.a[2], borderWidth: 1.8, pointRadius: 0, yAxisID: 'y', spanGaps: true }];
+  if (e.b) ds.push({ label: e.b[1], data: S[e.b[0]].slice(from), borderColor: e.b[2], borderWidth: 1.2, pointRadius: 0, yAxisID: 'y2', spanGaps: true });
+  if (e.line) ds.push({ label: e.line[1], data: labels.map(() => e.line[0]), borderColor: 'rgba(226,232,240,0.45)', borderDash: [4, 4], borderWidth: 1, pointRadius: 0, yAxisID: 'y' });
+  if (charts.ex) charts.ex.destroy();
+  charts.ex = new Chart(document.getElementById('explorer'), {
+    type: 'line', data: { labels, datasets: ds },
+    options: {
+      responsive: true, maintainAspectRatio: false, animation: false, interaction: { mode: 'index', intersect: false },
+      plugins: { bands: { labels, phases: ph }, legend: { labels: { font: mono(), boxWidth: 10 } } },
+      scales: {
+        x: { ticks: yearTicks(labels), grid: { display: false } },
+        y: { type: e.a[3] === 'log' ? 'logarithmic' : 'linear', ticks: { font: mono() } },
+        y2: { display: !!e.b, type: e.b && e.b[3] === 'log' ? 'logarithmic' : 'linear', position: 'right', grid: { display: false }, ticks: { font: mono() } }
+      }
+    }
+  });
+  document.getElementById('ex-note').textContent = e.note;
+  document.getElementById('ex-sub').textContent = 'shaded by phase';
+}
+
+async function load() {
+  try {
+    const r = await fetch('data/liquidity.json', { cache: 'no-cache' });
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    D = await r.json(); S = D.series;
+  } catch (e) {
+    const el = document.getElementById('error-msg'); el.textContent = `Could not load data/liquidity.json (${e.message}).`; el.classList.add('visible'); return;
+  }
+  document.getElementById('updated').textContent = `Data through ${D.data_through} · built ${D.generated.slice(0, 16).replace('T', ' ')}Z${D.failed.length ? ' · stale: ' + D.failed.join(', ') : ''}`;
+  renderHero(); renderStats(); renderTripwires(); renderNexus();
+  renderComps('lci-comps', D.lci_components, false); renderComps('stress-comps', D.stress_components, true);
+  renderBacktest(); renderRangeTabs(); renderMain(); renderClock(); renderExTabs(); renderExplorer();
+}
+let rt; window.addEventListener('resize', () => { clearTimeout(rt); rt = setTimeout(() => { if (D) { renderMain(); renderClock(); renderExplorer(); } }, 200); });
+load();
+</script>
+</body>
+</html>
