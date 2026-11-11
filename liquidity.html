@@ -129,6 +129,46 @@
   .error-msg { background: var(--red-dim); border: 1px solid rgba(239,68,68,0.3); border-radius: var(--radius); padding: 12px 16px; font-size: 13px; color: var(--red); margin-bottom: 16px; display: none; }
   .error-msg.visible { display: block; }
 
+
+  /* Reserve adequacy */
+  .res-grid { display: grid; grid-template-columns: 300px minmax(0,1fr); gap: 0; }
+  .res-left { padding: 18px 20px; border-right: 1px solid var(--border); display: flex; flex-direction: column; gap: 10px; }
+  .res-val { font-size: 48px; font-weight: 700; font-family: var(--mono); letter-spacing: -0.04em; line-height: 1; }
+  .res-zone { font-size: 13px; font-weight: 700; letter-spacing: 0.06em; }
+  .zscale { position: relative; height: 10px; border-radius: 4px; overflow: hidden; display: flex; margin-top: 4px; }
+  .zscale div { height: 100%; }
+  .zmark { position: absolute; top: -4px; width: 3px; height: 18px; background: #fff; border-radius: 2px; box-shadow: 0 0 0 2px var(--bg-card); }
+  .zlabels { position: relative; height: 14px; font-size: 9.5px; color: var(--text-muted); font-family: var(--mono); }
+  .zlabels span { position: absolute; transform: translateX(-50%); }
+  .res-kv { display: grid; grid-template-columns: 1fr auto; gap: 3px 10px; font-size: 12px; }
+  .res-kv span:nth-child(odd) { color: var(--text-muted); }
+  .res-kv span:nth-child(even) { font-family: var(--mono); text-align: right; }
+  .res-right { min-width: 0; }
+  .res-tiles { display: grid; grid-template-columns: repeat(4, 1fr); border-bottom: 1px solid var(--border); }
+  .res-tile { padding: 12px 16px; border-right: 1px solid var(--border); }
+  .res-tile:last-child { border-right: none; }
+  .res-tile .v { font-family: var(--mono); font-size: 20px; font-weight: 500; margin-top: 3px; }
+  .res-tile .s { font-family: var(--mono); font-size: 10.5px; color: var(--text-muted); margin-top: 2px; }
+  .res-foot { display: grid; grid-template-columns: 1.2fr 1fr; border-top: 1px solid var(--border); }
+  .res-foot > div { padding: 12px 16px; min-width: 0; }
+  .res-foot > div:first-child { border-right: 1px solid var(--border); }
+  .ep { width: 100%; border-collapse: collapse; font-size: 12px; }
+  .ep th { font-size: 10px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; text-align: right; padding: 4px 6px; }
+  .ep th:first-child, .ep td:first-child { text-align: left; }
+  .ep td { font-family: var(--mono); text-align: right; padding: 4px 6px; border-top: 1px solid rgba(30,37,48,0.5); }
+  .cal { font-size: 12px; line-height: 1.5; color: var(--text-secondary); }
+  .cal div { display: grid; grid-template-columns: 92px 1fr; gap: 8px; padding: 4px 0; border-top: 1px solid rgba(30,37,48,0.5); }
+  .cal div:first-of-type { border-top: none; }
+  .cal b { color: var(--text); font-weight: 600; }
+  @media (max-width: 1100px) {
+    .res-grid { grid-template-columns: 1fr; }
+    .res-left { border-right: none; border-bottom: 1px solid var(--border); }
+    .res-tiles { grid-template-columns: repeat(2, 1fr); }
+    .res-tile:nth-child(2) { border-right: none; }
+    .res-tile:nth-child(-n+2) { border-bottom: 1px solid var(--border); }
+    .res-foot { grid-template-columns: 1fr; }
+    .res-foot > div:first-child { border-right: none; border-bottom: 1px solid var(--border); }
+  }
   @media (max-width: 1100px) {
     .hero { grid-template-columns: 1fr 1fr; }
     .phase-card { grid-column: 1 / -1; }
@@ -194,6 +234,34 @@
   </div>
 
   <div class="stats" id="stats"></div>
+
+  <div class="card" id="res-card" style="margin-bottom:18px;display:none">
+    <div class="card-h"><h3>Reserve adequacy · repo-crisis watch</h3><div class="tw-count" id="res-pill"></div></div>
+    <div class="res-grid">
+      <div class="res-left">
+        <div class="eyebrow">Reserves + RRP as % of bank assets</div>
+        <div class="res-val" id="res-val">—</div>
+        <div class="res-zone" id="res-zone"></div>
+        <div><div class="zscale" id="res-scale"></div><div class="zlabels" id="res-zl"></div></div>
+        <div class="res-kv" id="res-kv"></div>
+      </div>
+      <div class="res-right">
+        <div class="res-tiles" id="res-tiles"></div>
+        <div class="tabs" id="res-tabs"></div>
+        <div class="chart-box"><canvas id="res-chart"></canvas></div>
+        <div class="explain" id="res-note"></div>
+      </div>
+    </div>
+    <div class="res-foot">
+      <div><div class="eyebrow" style="margin-bottom:6px">Past repo stress, and the ratio when it hit</div><table class="ep" id="res-ep"></table></div>
+      <div><div class="eyebrow" style="margin-bottom:6px">2027 calendar (Goldman, Nov 2026)</div><div class="cal">
+        <div><b>Q1 2027</b><span>Fed reserve-management bill purchases ~$10B/month; Goldman sees ~$25B/month from Q2, ~$255B for the year.</span></div>
+        <div><b>~Feb 2027</b><span>$41.1T debt ceiling binds. Treasury runs down its cash account (~$400B on average in past episodes), which adds reserves.</span></div>
+        <div><b>Spring–summer</b><span>Likely loose: reserves up, fewer bills, repo further below IORB.</span></div>
+        <div><b>After a deal (2H)</b><span>The risk window: TGA rebuild plus heavy bill issuance drains reserves, as in 2019 and late 2025.</span></div>
+      </div></div>
+    </div>
+  </div>
 
   <div class="grid-clock">
     <div class="card">
@@ -271,6 +339,8 @@
       <p>MOVE (weight 1.5), SOFR − IORB, 13-week change in Baa − 10Y, Chicago Fed NFCI, and VIX (weight 0.5). This measures how hard the system is straining to roll its debt, kept separate from the liquidity cycle.</p>
       <h4>Debt ↔ liquidity nexus</h4>
       <p>From Howell (BTC Sessions, Oct 2026). If debt can't be turned into liquidity, MOVE spikes and SOFR spreads widen. If liquidity can't be turned into debt, term premia compress and credit spreads widen. Either one firing is a refinancing squeeze.</p>
+      <h4>Reserve adequacy</h4>
+      <p>Goldman's measure: (bank reserves + overnight reverse repo) ÷ total commercial bank assets (H.8). Zones: 13%+ abundant (NY Fed found the funds rate stops responding to reserves above ~13%), 11–13% ample, 10–11% the steep part of the demand curve, under 10% scarce. Sept 2019 broke near 7–8%. The price check is repo against the Fed's floor: TGCR (NY Fed) and SOFR minus IORB, plus Standing Repo Facility usage. Past episodes are found from the data: days SOFR printed 10 bp or more above the floor, grouped when within 45 days.</p>
       <h4>Known gaps</h4>
       <ul>
         <li>No PBoC. Howell says US and Chinese cycles have run in opposite phase since ~2020, so a G3 proxy can read differently from his global number.</li>
@@ -592,6 +662,116 @@ function renderExplorer() {
   document.getElementById('ex-sub').textContent = 'shaded by phase';
 }
 
+
+// ---------- Reserve adequacy ----------
+let resTab = 'ratio';
+const ZCOL = { ABUNDANT: 'var(--green)', AMPLE: '#86efac', 'STEEP PART': 'var(--orange)', SCARCE: 'var(--red)' };
+const ZHEX = { ABUNDANT: '#22c55e', AMPLE: '#86efac', 'STEEP PART': '#f97316', SCARCE: '#ef4444' };
+const RES_LO = 6, RES_HI = 20;   // display range for the zone bar, %
+const resPos = v => 100 * (Math.min(RES_HI, Math.max(RES_LO, v)) - RES_LO) / (RES_HI - RES_LO);
+
+function renderReserves() {
+  const R = D.reserves;
+  if (!R) return;
+  document.getElementById('res-card').style.display = '';
+  const [sc, sl] = STATUS[R.status];
+  document.getElementById('res-pill').innerHTML = `<span class="pill" style="background:rgba(255,255,255,0.05);color:${sc}">${sl}</span><span class="sub" style="font-size:11px;color:var(--text-muted)">week of ${R.as_of}</span>`;
+
+  const v = document.getElementById('res-val'); v.textContent = R.ratio.toFixed(1) + '%'; v.style.color = ZCOL[R.zone];
+  const z = document.getElementById('res-zone'); z.textContent = R.zone; z.style.color = ZCOL[R.zone];
+
+  // zone bar: bands from RES_LO to RES_HI
+  const zs = [...R.zones].sort((a, b) => a.floor - b.floor);   // SCARCE, STEEP, AMPLE, ABUNDANT
+  let html = '';
+  zs.forEach((zn, i) => {
+    const lo = Math.max(RES_LO, zn.floor), hi = i + 1 < zs.length ? zs[i + 1].floor : RES_HI;
+    html += `<div style="width:${resPos(hi) - resPos(lo)}%;background:${ZHEX[zn.name]};opacity:0.55"></div>`;
+  });
+  html += `<div class="zmark" style="left:calc(${resPos(R.ratio)}% - 1px)"></div>`;
+  document.getElementById('res-scale').innerHTML = html;
+  const ticks = [[R.trough_2019, '2019'], [10, '10'], [11, '11'], [13, '13']].filter(t => t[0] != null);
+  document.getElementById('res-zl').innerHTML = ticks.map(([t, l]) => `<span style="left:${resPos(t)}%">${l === '2019' ? '▲' + t.toFixed(0) : l}</span>`).join('');
+
+  const ch = (a) => a == null ? 'n/a' : sgn(R.ratio - a, 2) + ' pts';
+  document.getElementById('res-kv').innerHTML = [
+    ['4 weeks', ch(R.ratio_4w)], ['13 weeks', ch(R.ratio_13w)], ['52 weeks', ch(R.ratio_52w)],
+    ['Reserves', `$${R.reserves_t.toFixed(2)}T`], ['Reverse repo', `$${R.rrp_b.toFixed(0)}B`],
+    ['Bank assets (H.8)', `$${R.bank_assets_t.toFixed(1)}T`],
+    ['Sept 2019 low', R.trough_2019 == null ? 'n/a' : `${R.trough_2019.toFixed(1)}%`],
+  ].map(([k, x]) => `<span>${k}</span><span>${x}</span>`).join('');
+
+  const rc = x => x == null ? 'var(--text-muted)' : x >= 5 ? 'var(--red)' : x >= 0 ? 'var(--yellow)' : 'var(--green)';
+  const tgaC = R.tga_13w_b == null ? 'var(--text-muted)' : R.tga_13w_b > 150 ? 'var(--orange)' : 'var(--text-secondary)';
+  const srfC = (R.srf_max30_b || 0) >= 25 ? 'var(--red)' : (R.srf_max30_b || 0) > 1 ? 'var(--yellow)' : 'var(--green)';
+  const tiles = [
+    ['TGCR − IORB', R.tgcr_sp == null ? 'n/a' : sgn(R.tgcr_sp, 0) + ' bp', `5-day avg ${sgn(R.repo_5d, 1)} bp`, rc(R.repo_5d)],
+    ['SOFR − IORB', sgn(R.sofr_sp, 0) + ' bp', `30-day max ${sgn(R.repo_max_30d, 0)} bp`, rc(R.sofr_sp)],
+    ['Standing repo usage', R.srf_last_b == null ? 'n/a' : `$${R.srf_last_b.toFixed(1)}B`, R.srf_max30_date ? `30d max $${R.srf_max30_b.toFixed(1)}B (${R.srf_max30_date.slice(5)})` : '30d max $0', srfC],
+    ['Treasury cash (TGA)', `$${R.tga_b.toFixed(0)}B`, R.tga_13w_b == null ? '' : `${sgn(R.tga_13w_b, 0)}B 13w (rise drains)`, tgaC],
+  ];
+  document.getElementById('res-tiles').innerHTML = tiles.map(([k, x, sub, c]) =>
+    `<div class="res-tile"><div class="eyebrow">${k}</div><div class="v" style="color:${c}">${x}</div><div class="s">${sub}</div></div>`).join('');
+
+  document.getElementById('res-ep').innerHTML = '<tr><th>Episode</th><th>Peak SOFR−floor</th><th>Days ≥10bp</th><th>Ratio</th></tr>' +
+    [...R.episodes].reverse().map(e => {
+      const zst = (e.ratio == null ? 'na' : e.ratio < 10 ? 'alert' : e.ratio < 11 ? 'watch' : 'ok');
+      return `<tr><td>${e.peak_date}</td><td style="color:${e.peak_bp >= 50 ? 'var(--red)' : 'var(--orange)'}">+${e.peak_bp} bp</td><td>${e.days}</td><td style="color:${STATUS[zst][0]}">${e.ratio == null ? 'n/a' : e.ratio.toFixed(1) + '%'}</td></tr>`;
+    }).join('') +
+    `<tr><td style="color:var(--text);font-family:var(--font);font-weight:600">Now</td><td style="color:${rc(R.sofr_sp)}">${sgn(R.sofr_sp, 0)} bp</td><td>—</td><td style="color:${ZCOL[R.zone]}">${R.ratio.toFixed(1)}%</td></tr>`;
+
+  renderResTabs(); renderResChart();
+}
+
+const RES_TABS = {
+  ratio: ['Ratio since 2015', 'Weekly. Dashed lines: 13% (NY Fed: funds-rate sensitivity near zero above this), 11% (Goldman\'s "cusp" of the steep part of the demand curve), 10%, and the Sept 2019 low. The ratio barely moving while repo spreads rise means the demand curve has shifted, which is worse than the ratio alone suggests.'],
+  repo:  ['Repo spreads (daily)', 'SOFR and TGCR minus the Fed\'s floor (IOER before July 2021, IORB after). Normal is a few bp below zero. Sustained readings above zero mean banks are short of reserves; quarter-end and tax-date spikes that reverse next day are noise. Bars: Fed repo operations, mostly the Standing Repo Facility, $B.'],
+  tga:   ['TGA vs reserves', 'Treasury\'s cash account moves dollar-for-dollar against reserves. Rebuilding the TGA after a debt-ceiling deal is the classic drain: it preceded both the Sept 2019 spike and the late-2025 stress.'],
+};
+
+function renderResTabs() {
+  document.getElementById('res-tabs').innerHTML = Object.entries(RES_TABS).map(([k, v]) =>
+    `<button class="tab ${k === resTab ? 'active' : ''}" onclick="resTab='${k}';renderResTabs();renderResChart()">${v[0]}</button>`).join('');
+}
+
+function renderResChart() {
+  const R = D.reserves, W = R.weekly, Dd = R.daily;
+  const flat = (labels, y, lab, col) => ({ label: lab, data: labels.map(() => y), borderColor: col, borderDash: [4, 4], borderWidth: 1, pointRadius: 0, yAxisID: 'y' });
+  let cfg;
+  if (resTab === 'ratio') {
+    const labels = W.dates;
+    const ds = [{ label: 'Reserves + RRP / bank assets (%)', data: W.res_ratio, borderColor: '#e2e8f0', borderWidth: 2, pointRadius: 0, yAxisID: 'y', spanGaps: true },
+                { label: 'Reserves only (%)', data: W.res_only_ratio, borderColor: 'rgba(6,182,212,0.6)', borderWidth: 1.2, pointRadius: 0, yAxisID: 'y', spanGaps: true },
+                flat(labels, 13, '13% abundant', 'rgba(34,197,94,0.6)'), flat(labels, 11, '11% cusp', 'rgba(249,115,22,0.7)'), flat(labels, 10, '10%', 'rgba(239,68,68,0.6)')];
+    if (R.trough_2019) ds.push(flat(labels, R.trough_2019, `2019 low ${R.trough_2019}%`, 'rgba(239,68,68,0.35)'));
+    cfg = { labels, ds, y: { min: 0, ticks: { font: mono(), callback: v => v + '%' } } };
+  } else if (resTab === 'repo') {
+    const labels = Dd.dates;
+    const ds = [{ type: 'bar', label: 'Fed repo ops ($B, right)', data: Dd.srf, backgroundColor: 'rgba(139,92,246,0.55)', yAxisID: 'y2', barPercentage: 1, categoryPercentage: 1 },
+                { label: 'SOFR − floor (bp)', data: Dd.sofr_sp, borderColor: '#ef4444', borderWidth: 1.2, pointRadius: 0, yAxisID: 'y', spanGaps: true }];
+    if (Dd.tgcr_sp.length) ds.push({ label: 'TGCR − floor (bp)', data: Dd.tgcr_sp, borderColor: '#eab308', borderWidth: 1, pointRadius: 0, yAxisID: 'y', spanGaps: true });
+    ds.push(flat(labels, 0, 'floor', 'rgba(226,232,240,0.45)'));
+    cfg = { labels, ds, y: { min: -20, max: 60, ticks: { font: mono() } }, y2: { min: 0, grid: { display: false }, ticks: { font: mono() } } };
+  } else {
+    const labels = W.dates;
+    cfg = { labels, ds: [
+      { label: 'TGA ($B)', data: W.tga, borderColor: '#eab308', borderWidth: 1.6, pointRadius: 0, yAxisID: 'y', spanGaps: true },
+      { label: 'Reserves ($T, right)', data: W.reserves, borderColor: '#06b6d4', borderWidth: 1.6, pointRadius: 0, yAxisID: 'y2', spanGaps: true }],
+      y: { min: 0, ticks: { font: mono() } }, y2: { grid: { display: false }, ticks: { font: mono() } } };
+  }
+  if (charts.res) charts.res.destroy();
+  charts.res = new Chart(document.getElementById('res-chart'), {
+    type: 'line', data: { labels: cfg.labels, datasets: cfg.ds },
+    options: {
+      responsive: true, maintainAspectRatio: false, animation: false, interaction: { mode: 'index', intersect: false },
+      plugins: { legend: { labels: { font: mono(), boxWidth: 10, filter: i => !/^(1[03]%|11%|10%|floor|2019 low)/.test(i.text) } },
+                 tooltip: { filter: i => !i.dataset.borderDash } },
+      scales: { x: { ticks: yearTicks(cfg.labels), grid: { display: false } }, y: cfg.y,
+                y2: cfg.y2 ? { position: 'right', ...cfg.y2 } : { display: false } }
+    }
+  });
+  document.getElementById('res-note').textContent = RES_TABS[resTab][1];
+}
+
 async function load() {
   try {
     const r = await fetch('data/liquidity.json', { cache: 'no-cache' });
@@ -601,11 +781,11 @@ async function load() {
     const el = document.getElementById('error-msg'); el.textContent = `Could not load data/liquidity.json (${e.message}).`; el.classList.add('visible'); return;
   }
   document.getElementById('updated').textContent = `Data through ${D.data_through} · built ${D.generated.slice(0, 16).replace('T', ' ')}Z${D.failed.length ? ' · stale: ' + D.failed.join(', ') : ''}`;
-  renderHero(); renderStats(); renderTripwires(); renderNexus();
+  renderHero(); renderStats(); renderReserves(); renderTripwires(); renderNexus();
   renderComps('lci-comps', D.lci_components, false); renderComps('stress-comps', D.stress_components, true);
   renderBacktest(); renderRangeTabs(); renderMain(); renderClock(); renderExTabs(); renderExplorer();
 }
-let rt; window.addEventListener('resize', () => { clearTimeout(rt); rt = setTimeout(() => { if (D) { renderMain(); renderClock(); renderExplorer(); } }, 200); });
+let rt; window.addEventListener('resize', () => { clearTimeout(rt); rt = setTimeout(() => { if (D) { renderMain(); renderClock(); renderExplorer(); if (D.reserves) renderResChart(); } }, 200); });
 load();
 </script>
 </body>

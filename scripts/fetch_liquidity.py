@@ -42,7 +42,11 @@ CONFIRM = 6             # a new phase must persist this many weeks before it is 
 
 FRED = ["WALCL", "WTREGEN", "RRPONTSYD", "WRESBAL", "ECBASSETSW", "JPNASSETS", "DEXUSEU",
         "DEXJPUS", "DEXCHUS", "DTWEXBGS", "THREEFYTP10", "NFCI", "VIXCLS", "DGS10", "DGS2",
-        "SOFR", "IORB", "CBBTCUSD", "BAA10Y", "GFDEBTN"]
+        "SOFR", "IORB", "CBBTCUSD", "BAA10Y", "GFDEBTN",
+        # Reserve adequacy panel: H.8 total bank assets ($B, SA, weekly), the pre-2021 floor
+        # rate (IOER, for the 2019 history), and Fed repo operations incl. the Standing Repo
+        # Facility ($B, daily).
+        "TLAACBW027SBOG", "IOER", "RPONTSYD"]
 YAHOO = {"MOVE": "^MOVE", "GOLD": "GC=F", "COPPER": "HG=F", "SPX": "^GSPC"}
 
 # Howell's model is quantity-based: MOVE and spreads are outputs, not inputs. So the cycle
@@ -130,12 +134,24 @@ def fetch_bill_share(ctx):
     return out
 
 
+def fetch_tgcr(ctx):
+    """NY Fed Tri-Party General Collateral Rate, daily since April 2018. Goldman's reserve
+    scarcity gauge is TGCR - IORB; FRED doesn't carry TGCR."""
+    end = dt.date.today().isoformat()
+    url = f"https://markets.newyorkfed.org/api/rates/secured/tgcr/search.json?startDate=2018-04-02&endDate={end}"
+    with urllib.request.urlopen(url, timeout=60, context=ctx) as r:
+        body = json.load(r)
+    return {x["effectiveDate"]: f"{float(x['percentRate']):.4f}"
+            for x in body.get("refRates", []) if x.get("percentRate") is not None}
+
+
 def gather():
     key, ctx = load_key(), ssl_context()
     RAW_DIR.mkdir(parents=True, exist_ok=True)
     jobs = [(s, lambda s=s: fetch(s, key, ctx, start=START)) for s in FRED]
     jobs += [(k, lambda v=v: fetch_yahoo(v, ctx)) for k, v in YAHOO.items()]
     jobs += [("BILLSHARE", lambda: fetch_bill_share(ctx))]
+    jobs += [("TGCR", lambda: fetch_tgcr(ctx))]
     series, failed = {}, []
     for name, job in jobs:
         rows = read_raw(name)
@@ -167,6 +183,8 @@ def build_panel(raw):
     w = {k: weekly(v) for k, v in raw.items()}
     idx = pd.date_range(START, w["WALCL"].index[-1], freq="W-WED")
     w = {k: v.reindex(idx).ffill() for k, v in w.items()}
+    for k in ("TLAACBW027SBOG",):
+        w.setdefault(k, pd.Series(np.nan, index=idx))
     p = pd.DataFrame(index=idx)
 
     # Fed net liquidity: balance sheet less the Treasury's cash account and the RRP facility.
@@ -202,6 +220,13 @@ def build_panel(raw):
     p["cu_au"] = 1000 * w["COPPER"] / w["GOLD"]
     # Howell's debt-to-liquidity idea, US-only proxy: federal debt over G3 CB liquidity.
     p["debt_liq"] = (w["GFDEBTN"] / 1e6) / p["g3"]
+
+    # Goldman's reserve-adequacy measure: (reserves + ON RRP) as a share of commercial bank
+    # assets. WRESBAL is $M, RRPONTSYD and the H.8 asset total are $B.
+    p["bank_assets"] = w["TLAACBW027SBOG"] / 1000                                     # $T
+    p["res_ratio"] = 100 * (w["WRESBAL"] / 1000 + w["RRPONTSYD"].fillna(0)) / w["TLAACBW027SBOG"]
+    p["res_only_ratio"] = 100 * (w["WRESBAL"] / 1000) / w["TLAACBW027SBOG"]
+    p["tga"] = w["WTREGEN"] / 1000                                                     # $B
 
     p["res_mom"] = 100 * p["reserves"].pct_change(26)
     p["fed_13"] = 100 * p["fed_net"].pct_change(13)
@@ -287,6 +312,9 @@ def tripwires(p):
         return "alert" if v >= alert else "watch" if v >= watch else "ok"
 
     fed4 = 100 * (last.fed_net / ago4.fed_net - 1)
+    rr = p["res_ratio"].dropna()
+    rr_now = rr.iloc[-1] if len(rr) else np.nan
+    rr_13 = rr_now - rr.iloc[-14] if len(rr) > 14 else np.nan
     hi52 = p["lci_smooth"].iloc[-52:].max()
     return [
         tw("Fed net liquidity, 13w", last.fed_13, "{:+.1f}%", lvl(last.fed_13, 0, -3, higher_bad=False),
@@ -295,6 +323,8 @@ def tripwires(p):
            f"Fed + ECB + BoJ in USD: ${last.g3:.1f}T."),
         tw("MOVE index", last.move, "{:.0f}", lvl(last.move, 100, 120),
            "Treasury vol drives collateral haircuts. >100 shrinks balance-sheet capacity; >120 is stress."),
+        tw("Reserves + RRP / bank assets", rr_now, "{:.1f}%", lvl(rr_now, 11, 10, higher_bad=False),
+           f"13-week change {rr_13:+.1f} pts. Above 13% abundant; Goldman's 'cusp' ~11%; Sept 2019 broke near 8%."),
         tw("SOFR − IORB", last.repo, "{:+.0f} bp", lvl(last.repo, 0, 5),
            "Repo trading above the Fed's floor means reserves are scarce (Sept 2019 pattern)."),
         tw("2Y − SOFR", last.policy, "{:+.0f} bp", lvl(last.policy, 25, 60),
@@ -332,6 +362,120 @@ def nexus(p):
             {"name": "Term premium, 13w Δ (bp)", "value": round(d_tp), "on": bool(d_tp < -10)},
             {"name": "Baa − 10Y, 13w Δ (bp)", "value": round(d_cr), "on": bool(d_cr > 15)}]},
     }
+
+
+# Reserve-adequacy zones on (reserves + RRP) / bank assets, %. The NY Fed (Liberty Street,
+# Aug 2024) found the funds-rate slope ~zero above ~13%; Sept 2019 broke near 8%; Goldman
+# (Nov 2026) calls ~11% "the cusp of the steeper part of the demand curve".
+RES_ZONES = [(13.0, "ABUNDANT", "ok"), (11.0, "AMPLE", "ok"), (10.0, "STEEP PART", "watch"),
+             (0.0, "SCARCE", "alert")]
+SPIKE_BP = 10          # repo above the floor by this much counts as a stress day
+EPISODE_GAP = 45       # days between stress days that still count as one episode
+
+
+def res_zone(v):
+    if v is None or pd.isna(v):
+        return "n/a", "na"
+    for floor, name, status in RES_ZONES:
+        if v >= floor:
+            return name, status
+    return RES_ZONES[-1][1], RES_ZONES[-1][2]
+
+
+def reserve_block(raw, p):
+    """Daily repo spreads, the Standing Repo Facility and TGA alongside the weekly ratio,
+    plus a data-driven list of past repo stress episodes and the ratio when each hit."""
+    floor = raw["IORB"].combine_first(raw.get("IOER", pd.Series(dtype=float))).sort_index()
+    daily = pd.DataFrame({"sofr": raw["SOFR"]})
+    if "TGCR" in raw:
+        daily["tgcr"] = raw["TGCR"]
+    daily["floor"] = floor.reindex(daily.index.union(floor.index)).ffill().reindex(daily.index)
+    daily["sofr_sp"] = (daily["sofr"] - daily["floor"]) * 100
+    daily["tgcr_sp"] = (daily["tgcr"] - daily["floor"]) * 100 if "tgcr" in daily else np.nan
+    daily = daily.dropna(subset=["sofr_sp"])
+    srf = raw.get("RPONTSYD", pd.Series(dtype=float)).sort_index()
+
+    ratio = p["res_ratio"].dropna()
+    if ratio.empty:
+        return None
+    last_d, now = ratio.index[-1], float(ratio.iloc[-1])
+
+    def ago(weeks):
+        return float(ratio.iloc[-1 - weeks]) if len(ratio) > weeks else None
+
+    # Past stress: days SOFR printed SPIKE_BP+ over the floor, grouped into episodes.
+    hot = daily[daily["sofr_sp"] >= SPIKE_BP]
+    eps, cur = [], None
+    for d, row in hot.iterrows():
+        if cur and (d - cur["end"]).days <= EPISODE_GAP:
+            cur["end"] = d
+            if row.sofr_sp > cur["peak"]:
+                cur["peak"], cur["peak_d"] = row.sofr_sp, d
+            cur["days"] += 1
+        else:
+            if cur:
+                eps.append(cur)
+            cur = {"start": d, "end": d, "peak": row.sofr_sp, "peak_d": d, "days": 1}
+    if cur:
+        eps.append(cur)
+    episodes_out = []
+    for e in eps:
+        r_at = ratio[:e["peak_d"]]
+        episodes_out.append({
+            "start": e["start"].date().isoformat(), "end": e["end"].date().isoformat(),
+            "peak_date": e["peak_d"].date().isoformat(), "peak_bp": round(float(e["peak"])),
+            "days": e["days"], "ratio": round(float(r_at.iloc[-1]), 1) if len(r_at) else None})
+
+    trough19 = ratio["2019-01-01":"2019-12-31"]
+    zone, zstat = res_zone(now)
+    rec = daily.iloc[-5:]
+    tg5 = rec["tgcr_sp"].dropna().mean() if "tgcr_sp" in rec else np.nan
+    sp5 = rec["sofr_sp"].mean()
+    gauge5 = tg5 if pd.notna(tg5) else sp5
+    repo_stat = "alert" if gauge5 >= 5 else "watch" if gauge5 >= 0 else "ok"
+    srf30 = srf[srf.index >= srf.index[-1] - pd.Timedelta(days=30)] if not srf.empty else srf
+    tga = p["tga"].dropna()
+    rank = {"ok": 0, "watch": 1, "alert": 2, "na": -1}
+    overall = max([zstat, repo_stat], key=lambda x: rank[x])
+
+    dd = daily.loc["2019-01-01":]
+    w = p.loc["2015-01-01":, ["res_ratio", "res_only_ratio", "reserves", "bank_assets", "tga"]]
+    return {
+        "as_of": last_d.date().isoformat(), "status": overall,
+        "ratio": r(now, 2), "ratio_4w": r(ago(4), 2), "ratio_13w": r(ago(13), 2), "ratio_52w": r(ago(52), 2),
+        "res_only": r(p["res_only_ratio"].dropna().iloc[-1], 2),
+        "zone": zone, "zone_status": zstat,
+        "zones": [{"floor": f, "name": n, "status": st} for f, n, st in RES_ZONES],
+        "trough_2019": r(float(trough19.min()), 1) if len(trough19) else None,
+        "trough_2019_date": trough19.idxmin().date().isoformat() if len(trough19) else None,
+        "reserves_t": r(float(p["reserves"].dropna().iloc[-1]), 3),
+        "rrp_b": r(float(raw["RRPONTSYD"].dropna().iloc[-1]), 1),
+        "bank_assets_t": r(float(p["bank_assets"].dropna().iloc[-1]), 2),
+        "tga_b": r(float(tga.iloc[-1]), 0), "tga_13w_b": r(float(tga.iloc[-1] - tga.iloc[-14]), 0) if len(tga) > 14 else None,
+        "repo_status": repo_stat, "repo_date": daily.index[-1].date().isoformat(),
+        "tgcr_sp": r(daily["tgcr_sp"].dropna().iloc[-1], 1) if daily["tgcr_sp"].notna().any() else None,
+        "sofr_sp": r(daily["sofr_sp"].iloc[-1], 1), "repo_5d": r(gauge5, 1),
+        "repo_max_30d": r(float(daily["sofr_sp"].iloc[-22:].max()), 0),
+        "srf_last_b": r(float(srf.iloc[-1]), 1) if not srf.empty else None,
+        "srf_last_date": srf.index[-1].date().isoformat() if not srf.empty else None,
+        "srf_max30_b": r(float(srf30.max()), 1) if not srf.empty else None,
+        "srf_max30_date": srf30.idxmax().date().isoformat() if not srf.empty and srf30.max() > 0 else None,
+        "episodes": episodes_out,
+        "weekly": {"dates": [d.date().isoformat() for d in w.index],
+                   **{c: [r(v, 3) for v in w[c]] for c in w.columns}},
+        "daily": {"dates": [d.date().isoformat() for d in dd.index],
+                  "sofr_sp": [r(v, 1) for v in dd["sofr_sp"]],
+                  "tgcr_sp": [r(v, 1) for v in dd["tgcr_sp"]] if "tgcr_sp" in dd else [],
+                  "srf": [r(float(srf.get(d, 0.0)), 1) for d in dd.index]},
+    }
+
+
+def safe_reserve_block(raw, p):
+    try:
+        return reserve_block(raw, p)
+    except Exception as e:  # noqa: BLE001 - the panel is optional; never block the page
+        print(f"::warning::reserve panel failed ({type(e).__name__}: {e})")
+        return None
 
 
 def backtest(p):
@@ -431,6 +575,7 @@ def main():
         "lci_components": comps(LCI_COMPONENTS), "stress_components": comps(STRESS_COMPONENTS),
         "tripwires": tripwires(p), "curve": curve_regime(p), "nexus": nexus(p),
         "backtest": backtest(p), "episodes": episodes(p), "failed": failed,
+        "reserves": safe_reserve_block(raw, p),
         "series": {"dates": [d.date().isoformat() for d in ch.index],
                    **{c: [r(v, 3) for v in ch[c]] for c in chart_cols}},
     }
