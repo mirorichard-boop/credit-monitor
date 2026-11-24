@@ -148,7 +148,9 @@
   }
   @media (max-width: 600px) {
     .main { padding: 12px 12px 24px; }
-    .header { padding: 10px 14px; padding-top: max(10px, env(safe-area-inset-top)); }
+    .header { padding: 10px 14px 8px; padding-top: max(10px, env(safe-area-inset-top)); flex-wrap: wrap; row-gap: 4px; }
+    .header-right { display: contents; }
+    .status-bar { order: 3; flex-basis: 100%; text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .logo { font-size: 15px; }
     .logo-text-long { display: none; }
     .btn { padding: 6px 10px; }
@@ -172,13 +174,14 @@
     .distress { padding: 14px; }
     .dstat-v { font-size: 15px; }
   }
+  @media (max-width: 360px) { .logo-text { display: none; } }
 </style>
 </head>
 <body>
 
 <div class="header">
   <div class="header-left">
-    <div class="logo"><div class="logo-icon">CS</div>Credit Spread<span class="logo-text-long">&nbsp;Monitor</span></div>
+    <div class="logo"><div class="logo-icon">CS</div><span class="logo-text">Credit Spread</span><span class="logo-text-long">&nbsp;Monitor</span></div>
     <nav class="nav"><a href="index.html" class="active">Credit</a><a href="liquidity.html">Liquidity</a></nav>
   </div>
   <div class="header-right">
@@ -562,7 +565,7 @@ async function loadAll() {
   const gen = new Date(latest.generated);
   const genStr = gen.toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
   document.getElementById('last-updated').innerHTML = isPhone()
-    ? `Data thru ${latest.data_through}<br>Pulled ${genStr}`
+    ? `Data thru ${latest.data_through} · pulled ${genStr}`
     : `Data through ${latest.data_through} · pulled ${genStr} · ${SERIES.length} series · FRED / ICE BofA`;
 }
 
