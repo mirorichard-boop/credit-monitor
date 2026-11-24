@@ -1,6 +1,16 @@
 #!/usr/bin/env python3
-"""Pull the 15 credit-monitor series from FRED, merge them into data/history/*.csv,
+"""Pull the credit-monitor series from FRED, merge them into data/history/*.csv,
 and write data/latest.json for the dashboard.
+
+Scoring is anchored to long history. FRED serves only ~3 years of the ICE BofA OAS
+indices, and those 3 years were unusually tight, so ranking ICE spreads against their own
+window overstates stress. Each ICE series is instead mapped onto a Moody's spread that FRED
+serves back to the 1980s (Aaa - 10Y or Baa - 10Y): take the ICE value's rank inside its own
+window, read the Moody's value at that same rank over the same dates, then rank that
+Moody's value against its full history. See long_run_percentile().
+
+CCC & Below is kept out of the headline composite. It feeds a separate distress gauge
+(CCC minus single-B gap) and joins the composite only when B/BB/HY confirm the stress.
 
 The FRED key comes from the FRED_API_KEY environment variable (or a local, gitignored
 .env file). It is never written to disk or printed.
@@ -8,8 +18,11 @@ The FRED key comes from the FRED_API_KEY environment variable (or a local, gitig
 FRED's ICE BofA series only return the trailing ~3 years, so data/history/ is the real
 archive: every run merges new observations in and never drops older rows.
 """
+import bisect
 import calendar
 import csv
+import math
+import statistics
 import datetime as dt
 import json
 import os
@@ -26,24 +39,35 @@ HIST_DIR = ROOT / "data" / "history"
 LATEST = ROOT / "data" / "latest.json"
 FRED_URL = "https://api.stlouisfed.org/fred/series/observations"
 
-# id, name, group, sensitivity weight (1-10), display unit, multiplier to display unit, inverse-scored
+# id, name, group, composite weight (0-10), display unit, multiplier to display unit,
+# inverse-scored, long-history bridge (None = series has its own long history)
 SERIES = [
-    ("BAMLC0A1CAAA",    "AAA OAS",         "ig",     3,  "bps", 100, False),
-    ("BAMLC0A2CAA",     "AA OAS",          "ig",     4,  "bps", 100, False),
-    ("BAMLC0A3CA",      "A OAS",           "ig",     5,  "bps", 100, False),
-    ("BAMLC0A4CBBB",    "BBB OAS",         "ig",     7,  "bps", 100, False),
-    ("BAMLH0A0HYM2",    "HY Master II",    "hy",     7,  "bps", 100, False),
-    ("BAMLH0A1HYBB",    "BB OAS",          "hy",     6,  "bps", 100, False),
-    ("BAMLH0A2HYB",     "B OAS",           "hy",     8,  "bps", 100, False),
-    ("BAMLH0A3HYC",     "CCC & Below",     "hy",     10, "bps", 100, False),
-    ("T10Y2Y",          "10Y – 2Y",        "curve",  6,  "bps", 100, True),
-    ("T10Y3M",          "10Y – 3M",        "curve",  8,  "bps", 100, True),
-    ("T10YFF",          "10Y – FedFunds",  "curve",  5,  "bps", 100, True),
-    ("BAMLEMCBPIOAS",   "EM Corp OAS",     "global", 6,  "bps", 100, False),
-    ("BAMLHE00EHYIOAS", "Euro HY OAS",     "global", 5,  "bps", 100, False),
-    ("MORTGAGE30US",    "30Y Mortgage",    "global", 5,  "%",   1,   False),
-    ("BAMLC0A0CM",      "US Corp Master",  "global", 6,  "bps", 100, False),
+    ("BAMLC0A1CAAA",    "AAA OAS",           "ig",     2,  "bps", 100, False, "AAA10Y"),
+    ("BAMLC0A2CAA",     "AA OAS",            "ig",     3,  "bps", 100, False, "AAA10Y"),
+    ("BAMLC0A3CA",      "A OAS",             "ig",     4,  "bps", 100, False, "AAA10Y"),
+    ("BAMLC0A4CBBB",    "BBB OAS",           "ig",     7,  "bps", 100, False, "BAA10Y"),
+    ("AAA10Y",          "Moody's Aaa – 10Y", "ig",     4,  "bps", 100, False, None),
+    ("BAA10Y",          "Moody's Baa – 10Y", "ig",     7,  "bps", 100, False, None),
+    ("BAMLH0A0HYM2",    "HY Master II",      "hy",     6,  "bps", 100, False, "BAA10Y"),
+    ("BAMLH0A1HYBB",    "BB OAS",            "hy",     7,  "bps", 100, False, "BAA10Y"),
+    ("BAMLH0A2HYB",     "B OAS",             "hy",     7,  "bps", 100, False, "BAA10Y"),
+    ("BAMLH0A3HYC",     "CCC & Below",       "hy",     0,  "bps", 100, False, "BAA10Y"),
+    ("T10Y2Y",          "10Y – 2Y",          "curve",  6,  "bps", 100, True,  None),
+    ("T10Y3M",          "10Y – 3M",          "curve",  8,  "bps", 100, True,  None),
+    ("T10YFF",          "10Y – FedFunds",    "curve",  5,  "bps", 100, True,  None),
+    ("BAMLEMCBPIOAS",   "EM Corp OAS",       "global", 6,  "bps", 100, False, "BAA10Y"),
+    ("BAMLHE00EHYIOAS", "Euro HY OAS",       "global", 5,  "bps", 100, False, "BAA10Y"),
+    ("MORTGAGE30US",    "30Y Mortgage",      "global", 5,  "%",   1,   False, None),
+    ("BAMLC0A0CM",      "US Corp Master",    "global", 6,  "bps", 100, False, "BAA10Y"),
 ]
+
+# CCC distress gauge. CCC is excluded from the composite (weight 0 above) unless confirmed.
+CCC, SINGLE_B, BB, HY = "BAMLH0A3HYC", "BAMLH0A2HYB", "BAMLH0A1HYBB", "BAMLH0A0HYM2"
+CCC_GAP_ALERT_PCT = 80      # CCC-B gap at/above this window percentile = CCC is stressed
+CCC_CONFIRMED_WEIGHT = 6    # weight CCC gets in the composite once B/BB/HY confirm
+CONFIRM_LONG_RUN = 60       # B or HY long-run stress at/above this confirms
+CONFIRM_B_1M_BPS = 75       # single-B widening over 1 month at/above this confirms
+CONFIRM_BB_1M_BPS = 50      # BB widening over 1 month at/above this confirms
 
 # Upper bound (inclusive) of each zone on the 0-100 stress scale.
 ZONES = [(25, "CLEAR"), (50, "WATCH"), (75, "CAUTION"), (100, "DANGER")]
@@ -125,13 +149,48 @@ def zone(score):
     return next(label for top, label in ZONES if score <= top)
 
 
-def summarize(sid, name, group, weight, unit, mult, invert, rows):
+def share_at_or_below(sorted_vals, x):
+    return bisect.bisect_right(sorted_vals, x) / len(sorted_vals)
+
+
+def long_run_percentile(cur, own_vals, bridge_rows, start):
+    """Translate a short-window value into a long-history percentile via a bridge series.
+
+    1. q = share of the series' own archive at or below today's value.
+    2. v = the bridge's value at quantile q over the same dates as the archive.
+       If today's value is outside the archive's range, extend linearly past the edge,
+       scaling by the ratio of the two series' standard deviations in the window.
+    3. Return the share of the bridge's full history at or below v.
+    """
+    own = sorted(own_vals)
+    window = sorted(v for d, v in bridge_rows.items() if d >= start)
+    full = sorted(bridge_rows.values())
+    if len(window) < 30:
+        return None
+    if cur > own[-1] or cur < own[0]:
+        scale = statistics.pstdev(window) / (statistics.pstdev(own) or 1)
+        edge_own, edge_b = (own[-1], window[-1]) if cur > own[-1] else (own[0], window[0])
+        v = edge_b + (cur - edge_own) * scale
+    else:
+        q = share_at_or_below(own, cur)
+        v = window[min(len(window) - 1, max(0, math.ceil(q * len(window)) - 1))]
+    return round(100 * share_at_or_below(full, v)), round(v, 4)
+
+
+def summarize(sid, name, group, weight, unit, mult, invert, bridge, rows, bridges):
     obs = [(dt.date.fromisoformat(d), float(v)) for d, v in sorted(rows.items())]
     last_date, cur = obs[-1]
     vals = [v for _, v in obs]
-    # Same definition as the original dashboard: share of observations <= today's value.
+    # Window percentile: share of this series' own archive <= today's value.
     pct = round(100 * sum(1 for v in vals if v <= cur) / len(vals))
-    stress = 100 - pct if invert else pct
+    lr, bridge_value = pct, None
+    if bridge and bridges.get(bridge):
+        res = long_run_percentile(cur, vals, bridges[bridge], obs[0][0].isoformat())
+        if res:
+            lr, bridge_value = res
+    else:
+        bridge = None
+    stress = 100 - lr if invert else lr
 
     def change(days=0, months=0):
         if months:
@@ -148,19 +207,61 @@ def summarize(sid, name, group, weight, unit, mult, invert, rows):
         "id": sid, "name": name, "group": group, "weight": weight, "unit": unit, "invert": invert,
         "value": round(cur * mult, 2), "date": last_date.isoformat(),
         "chg_1w": change(days=7), "chg_1m": change(months=1), "chg_1y": change(months=12),
-        "percentile": pct, "stress": stress,
+        "percentile": pct, "long_run_percentile": lr, "stress": stress,
+        "bridge": bridge, "bridge_value": None if bridge_value is None else round(bridge_value * mult, 1),
+        "bridge_range_start": min(bridges[bridge]) if bridge else None,
         "range_start": first.isoformat(), "range_end": last_date.isoformat(), "n_obs": len(obs),
         "range_years": round((last_date - first).days / 365.25, 1),
     }
+
+
+def ccc_distress(out, hist):
+    """CCC minus single-B gap, its window percentile, and whether B/BB/HY confirm it."""
+    by = {s["id"]: s for s in out}
+    if CCC not in hist or SINGLE_B not in hist or CCC not in by or SINGLE_B not in by:
+        return None
+    c, b = hist[CCC], hist[SINGLE_B]
+    common = sorted(set(c) & set(b))
+    gaps = [(float(c[d]) - float(b[d])) * 100 for d in common]
+    gap = gaps[-1]
+    gap_pct = round(100 * sum(1 for g in gaps if g <= gap) / len(gaps))
+    prior = [g for d, g in zip(common, gaps) if d <= (dt.date.fromisoformat(common[-1]) - dt.timedelta(days=30)).isoformat()]
+    gap_1m = round(gap - prior[-1]) if prior else None
+    bb_ratio = None
+    if BB in hist and common[-1] in hist[BB]:
+        bb_ratio = round(float(c[common[-1]]) / float(hist[BB][common[-1]]), 2)
+
+    def chk(label, sid, field, threshold, unit):
+        s = by.get(sid)
+        val = None if s is None else s[field]
+        return {"label": label, "value": val, "threshold": threshold, "unit": unit,
+                "hit": val is not None and val >= threshold}
+
+    confirms = [
+        chk("Single-B long-run stress", SINGLE_B, "stress", CONFIRM_LONG_RUN, "pctile"),
+        chk("HY Master long-run stress", HY, "stress", CONFIRM_LONG_RUN, "pctile"),
+        chk("Single-B 1-month widening", SINGLE_B, "chg_1m", CONFIRM_B_1M_BPS, "bps"),
+        chk("BB 1-month widening", BB, "chg_1m", CONFIRM_BB_1M_BPS, "bps"),
+    ]
+    hits = sum(x["hit"] for x in confirms)
+    if gap_pct < CCC_GAP_ALERT_PCT:
+        state, note = "QUIET", "CCC spread is not unusually wide relative to single-B."
+    elif hits == 0:
+        state, note = "ISOLATED", "CCC is blowing out on its own. B, BB and HY do not confirm, so it stays out of the composite."
+    else:
+        state, note = "CONFIRMED", f"{hits} of {len(confirms)} higher-quality checks confirm. CCC enters the composite at weight {CCC_CONFIRMED_WEIGHT}."
+    return {"state": state, "note": note, "gap_bps": round(gap), "gap_1m_bps": gap_1m,
+            "gap_percentile": gap_pct, "gap_alert_pct": CCC_GAP_ALERT_PCT, "ccc_bb_ratio": bb_ratio,
+            "confirms": confirms, "confirmed_weight": CCC_CONFIRMED_WEIGHT, "date": common[-1]}
 
 
 def main():
     key = load_key()
     ctx = ssl_context()
     HIST_DIR.mkdir(parents=True, exist_ok=True)
-    out, failed = [], []
+    failed, hist = [], {}
 
-    for sid, *meta in SERIES:
+    for sid, *_ in SERIES:
         rows = read_history(sid)
         before = len(rows)
         try:
@@ -171,30 +272,46 @@ def main():
             failed.append(sid)
             print(f"::warning::{sid} fetch failed ({e}); using archive only")
         if rows:
-            out.append(summarize(sid, *meta, rows))
+            hist[sid] = rows
         time.sleep(0.6)  # stay well under FRED's 120 requests/minute
 
-    if not out:
+    if not hist:
         sys.exit("no data for any series")
 
-    total_w = sum(s["weight"] for s in out)
-    composite = round(sum(s["stress"] * s["weight"] for s in out) / total_w)
+    bridges = {sid: {d: float(v) for d, v in rows.items()} for sid, rows in hist.items()
+               if sid in {m[-1] for _, *m in SERIES if m[-1]}}
+    out = [summarize(sid, *meta, hist[sid], bridges) for sid, *meta in SERIES if sid in hist]
+
+    distress = ccc_distress(out, hist)
+    if distress and distress["state"] == "CONFIRMED":
+        next(s for s in out if s["id"] == CCC)["weight"] = CCC_CONFIRMED_WEIGHT
+    for s in out:
+        s["in_composite"] = s["weight"] > 0
+
+    scored = [s for s in out if s["weight"] > 0]
+    total_w = sum(s["weight"] for s in scored)
+    composite = round(sum(s["stress"] * s["weight"] for s in scored) / total_w)
+    # Same weights, scored against each series' own short window: what the old method said.
+    window_stress = lambda s: 100 - s["percentile"] if s["invert"] else s["percentile"]
+    composite_window = round(sum(window_stress(s) * s["weight"] for s in scored) / total_w)
     groups = {}
     for g in ("ig", "hy", "curve", "global"):
-        members = [s["stress"] for s in out if s["group"] == g]
+        members = [s for s in scored if s["group"] == g]
         if members:
-            avg = round(sum(members) / len(members))
+            avg = round(sum(s["stress"] * s["weight"] for s in members) / sum(s["weight"] for s in members))
             groups[g] = {"stress": avg, "zone": zone(avg)}
 
     latest = {
         "generated": dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
         "data_through": max(s["date"] for s in out),
         "composite": composite, "zone": zone(composite),
+        "composite_window": composite_window, "zone_window": zone(composite_window),
         "zones": [{"max": top, "label": label} for top, label in ZONES],
-        "groups": groups, "failed": failed, "series": out,
+        "groups": groups, "ccc_distress": distress, "failed": failed, "series": out,
     }
     LATEST.write_text(json.dumps(latest, indent=1, ensure_ascii=False) + "\n")
-    print(f"composite {composite} {zone(composite)} | {len(out) - len(failed)}/{len(SERIES)} fetched")
+    print(f"composite {composite} {zone(composite)} (window-ranked {composite_window}) | "
+          f"CCC {distress['state'] if distress else 'n/a'} | {len(out) - len(failed)}/{len(SERIES)} fetched")
     sys.exit(1 if len(failed) == len(SERIES) else 0)
 
 
