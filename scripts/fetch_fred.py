@@ -9,8 +9,15 @@ serves back to the 1980s (Aaa - 10Y or Baa - 10Y): take the ICE value's rank ins
 window, read the Moody's value at that same rank over the same dates, then rank that
 Moody's value against its full history. See long_run_percentile().
 
-CCC & Below is kept out of the headline composite. It feeds a separate distress gauge
-(CCC minus single-B gap) and joins the composite only when B/BB/HY confirm the stress.
+CCC & Below and single-B are the exception: the Moody's bridge cannot rank them (CCC moves
+almost independently of Baa, and a series at its 3-year high is capped at Baa's 3-year
+high). They are ranked against their own ICE history since Dec 1996 instead: a frozen
+quantile table of the pre-archive years (data/longrun/, built by build_longrun.py) combined
+with the live archive. See own_history_percentile().
+
+CCC always counts in the composite at a floor weight, which rises when stress has spread
+to single-B and BB (breadth_state()). A separate ladder shows how far up the rating tiers
+the widening has climbed (stress_ladder()).
 
 The FRED key comes from the FRED_API_KEY environment variable (or a local, gitignored
 .env file). It is never written to disk or printed.
@@ -50,8 +57,8 @@ SERIES = [
     ("BAA10Y",          "Moody's Baa – 10Y", "ig",     7,  "bps", 100, False, None),
     ("BAMLH0A0HYM2",    "HY Master II",      "hy",     6,  "bps", 100, False, "BAA10Y"),
     ("BAMLH0A1HYBB",    "BB OAS",            "hy",     7,  "bps", 100, False, "BAA10Y"),
-    ("BAMLH0A2HYB",     "B OAS",             "hy",     7,  "bps", 100, False, "BAA10Y"),
-    ("BAMLH0A3HYC",     "CCC & Below",       "hy",     0,  "bps", 100, False, "BAA10Y"),
+    ("BAMLH0A2HYB",     "B OAS",             "hy",     7,  "bps", 100, False, None),
+    ("BAMLH0A3HYC",     "CCC & Below",       "hy",     3,  "bps", 100, False, None),
     ("T10Y2Y",          "10Y – 2Y",          "curve",  6,  "bps", 100, True,  None),
     ("T10Y3M",          "10Y – 3M",          "curve",  8,  "bps", 100, True,  None),
     ("T10YFF",          "10Y – FedFunds",    "curve",  5,  "bps", 100, True,  None),
@@ -61,13 +68,25 @@ SERIES = [
     ("BAMLC0A0CM",      "US Corp Master",    "global", 6,  "bps", 100, False, "BAA10Y"),
 ]
 
-# CCC distress gauge. CCC is excluded from the composite (weight 0 above) unless confirmed.
+LONGRUN_DIR = ROOT / "data" / "longrun"
+
+# CCC distress gauge. CCC counts at its floor weight (SERIES above) and steps up once the
+# widening has spread to single-B and BB.
 CCC, SINGLE_B, BB, HY = "BAMLH0A3HYC", "BAMLH0A2HYB", "BAMLH0A1HYBB", "BAMLH0A0HYM2"
-CCC_GAP_ALERT_PCT = 80      # CCC-B gap at/above this window percentile = CCC is stressed
-CCC_CONFIRMED_WEIGHT = 6    # weight CCC gets in the composite once B/BB/HY confirm
-CONFIRM_LONG_RUN = 60       # B or HY long-run stress at/above this confirms
-CONFIRM_B_1M_BPS = 75       # single-B widening over 1 month at/above this confirms
-CONFIRM_BB_1M_BPS = 50      # BB widening over 1 month at/above this confirms
+BBB, IG = "BAMLC0A4CBBB", "BAMLC0A0CM"
+CCC_STRESSED_PCT = 75       # CCC long-run percentile at/above this = CCC is stressed
+CCC_GAP_ALERT_PCT = 80      # or CCC-B gap long-run percentile at/above this
+CCC_CONFIRMED_WEIGHT = 6    # weight CCC gets once breadth confirms
+# Breadth: spreads scale with their level, so compare tiers in percent, not bps.
+BREADTH_DAYS = 91           # look-back for the widening
+BREADTH_ENTER = 0.25        # B and BB both up >= 25% (log) ...
+BREADTH_ENTER_HOLD = 5      # ... for 5 straight trading days confirms
+BREADTH_EXIT = 0.15         # confirmation ends once B and BB are both under +15% ...
+BREADTH_EXIT_HOLD = 10      # ... for 10 straight trading days
+# Stress ladder: a rung has turned when its 5-day average sits this many bps above its
+# low of the past year. Thresholds scale roughly with each tier's typical spread.
+LADDER = [(CCC, "CCC", 200), (SINGLE_B, "B", 100), (BB, "BB", 75), (BBB, "BBB", 50), (IG, "IG Corp", 40)]
+LADDER_LOOKBACK_DAYS = 365
 
 # Upper bound (inclusive) of each zone on the 0-100 stress scale.
 ZONES = [(25, "CLEAR"), (50, "WATCH"), (75, "CAUTION"), (100, "DANGER")]
@@ -177,6 +196,22 @@ def long_run_percentile(cur, own_vals, bridge_rows, start):
     return round(100 * share_at_or_below(full, v)), round(v, 4)
 
 
+def load_longrun(measure):
+    path = LONGRUN_DIR / f"{measure}.json"
+    return json.loads(path.read_text()) if path.exists() else None
+
+
+def own_history_percentile(cur, archive_vals, table):
+    """Rank cur against frozen pre-archive quantiles plus the live archive, weighted by
+    observation count. Archive values dated before table['archive_from'] are not double
+    counted because the table stops where the archive starts."""
+    q = table["quantiles"]
+    frozen_share = bisect.bisect_right(q, cur) / len(q)
+    n_old, n_new = table["n"], len(archive_vals)
+    at_or_below = n_old * frozen_share + sum(1 for v in archive_vals if v <= cur)
+    return round(100 * at_or_below / (n_old + n_new))
+
+
 def summarize(sid, name, group, weight, unit, mult, invert, bridge, rows, bridges):
     obs = [(dt.date.fromisoformat(d), float(v)) for d, v in sorted(rows.items())]
     last_date, cur = obs[-1]
@@ -184,7 +219,10 @@ def summarize(sid, name, group, weight, unit, mult, invert, bridge, rows, bridge
     # Window percentile: share of this series' own archive <= today's value.
     pct = round(100 * sum(1 for v in vals if v <= cur) / len(vals))
     lr, bridge_value = pct, None
-    if bridge and bridges.get(bridge):
+    own = load_longrun(sid)
+    if own:
+        lr, bridge = own_history_percentile(cur, vals, own), None
+    elif bridge and bridges.get(bridge):
         res = long_run_percentile(cur, vals, bridges[bridge], obs[0][0].isoformat())
         if res:
             lr, bridge_value = res
@@ -210,49 +248,133 @@ def summarize(sid, name, group, weight, unit, mult, invert, bridge, rows, bridge
         "percentile": pct, "long_run_percentile": lr, "stress": stress,
         "bridge": bridge, "bridge_value": None if bridge_value is None else round(bridge_value * mult, 1),
         "bridge_range_start": min(bridges[bridge]) if bridge else None,
+        "own_history_start": own["start"] if own else None,
+        "own_history_n": own["n"] + len(vals) if own else None,
         "range_start": first.isoformat(), "range_end": last_date.isoformat(), "n_obs": len(obs),
         "range_years": round((last_date - first).days / 365.25, 1),
     }
 
 
-def ccc_distress(out, hist):
-    """CCC minus single-B gap, its window percentile, and whether B/BB/HY confirm it."""
-    by = {s["id"]: s for s in out}
-    if CCC not in hist or SINGLE_B not in hist or CCC not in by or SINGLE_B not in by:
+def series_obs(hist, sid):
+    return [(dt.date.fromisoformat(d), float(v) * 100) for d, v in sorted(hist[sid].items())]
+
+
+def log_change(dates, vals, i, days):
+    """log(v_i / v_j), j = last observation dated <= dates[i] - days (None if absent/stale)."""
+    target = dates[i] - dt.timedelta(days=days)
+    j = bisect.bisect_right(dates, target) - 1
+    if j < 0 or (dates[i] - dates[j]).days > days + 10:
         return None
-    c, b = hist[CCC], hist[SINGLE_B]
-    common = sorted(set(c) & set(b))
+    return math.log(vals[i] / vals[j])
+
+
+def breadth_state(hist):
+    """Replay the breadth confirmation day by day over the archive, with hysteresis.
+
+    Enters when single-B and BB have both widened >= BREADTH_ENTER over BREADTH_DAYS for
+    BREADTH_ENTER_HOLD straight days; exits after BREADTH_EXIT_HOLD straight days with both
+    under BREADTH_EXIT. Replaying from the start keeps the state deterministic without a
+    state file.
+    """
+    b, bb = dict(series_obs(hist, SINGLE_B)), dict(series_obs(hist, BB))
+    dates = sorted(set(b) & set(bb))
+    bv, bbv = [b[d] for d in dates], [bb[d] for d in dates]
+    confirmed, enter_run, exit_run, since = False, 0, 0, None
+    b3 = bb3 = None
+    for i in range(len(dates)):
+        b3, bb3 = log_change(dates, bv, i, BREADTH_DAYS), log_change(dates, bbv, i, BREADTH_DAYS)
+        if b3 is None or bb3 is None:
+            continue
+        if not confirmed:
+            enter_run = enter_run + 1 if b3 >= BREADTH_ENTER and bb3 >= BREADTH_ENTER else 0
+            if enter_run >= BREADTH_ENTER_HOLD:
+                confirmed, since, exit_run = True, dates[i].isoformat(), 0
+        else:
+            exit_run = exit_run + 1 if b3 < BREADTH_EXIT and bb3 < BREADTH_EXIT else 0
+            if exit_run >= BREADTH_EXIT_HOLD:
+                confirmed, since, enter_run = False, None, 0
+    pct = lambda x: None if x is None else round(100 * x, 1)
+    return {"confirmed": confirmed, "since": since, "b_3m_pct": pct(b3), "bb_3m_pct": pct(bb3),
+            "enter_run": 0 if confirmed else enter_run, "exit_run": exit_run if confirmed else 0,
+            "date": dates[-1].isoformat()}
+
+
+def stress_ladder(hist):
+    """How far up the rating tiers the widening has climbed."""
+    rungs = []
+    for sid, label, threshold in LADDER:
+        if sid not in hist:
+            continue
+        obs = series_obs(hist, sid)
+        dates, vals = [d for d, _ in obs], [v for _, v in obs]
+        ma = [sum(vals[max(0, i - 4):i + 1]) / (i + 1 - max(0, i - 4)) for i in range(len(vals))]
+        cutoff = dates[-1] - dt.timedelta(days=LADDER_LOOKBACK_DAYS)
+        start = bisect.bisect_left(dates, cutoff)
+        t = min(range(start, len(ma)), key=lambda i: ma[i])
+        rise = ma[-1] - ma[t]
+        turned_on = next((dates[i].isoformat() for i in range(t, len(ma)) if ma[i] - ma[t] >= threshold), None)
+        rungs.append({"id": sid, "label": label, "value": round(vals[-1]), "low": round(ma[t]),
+                      "low_date": dates[t].isoformat(), "rise_bps": round(rise), "threshold_bps": threshold,
+                      "turned": rise >= threshold, "turned_on": turned_on if rise >= threshold else None})
+    height = 0
+    for r in rungs:
+        if not r["turned"]:
+            break
+        height += 1
+    return {"rungs": rungs, "height": height, "lookback_days": LADDER_LOOKBACK_DAYS}
+
+
+def ccc_distress(out, hist):
+    """CCC level and gap against 1996+ history, breadth confirmation, composite weight."""
+    by = {s["id"]: s for s in out}
+    if any(sid not in hist or sid not in by for sid in (CCC, SINGLE_B, BB)):
+        return None
+    c, b, bb = hist[CCC], hist[SINGLE_B], hist[BB]
+    common = sorted(set(c) & set(b) & set(bb))
     gaps = [(float(c[d]) - float(b[d])) * 100 for d in common]
-    gap = gaps[-1]
-    gap_pct = round(100 * sum(1 for g in gaps if g <= gap) / len(gaps))
+    ratios = [float(c[d]) / float(bb[d]) for d in common]
+    gap, ratio = gaps[-1], ratios[-1]
+    gap_tab, ratio_tab = load_longrun("CCC_B_GAP"), load_longrun("CCC_BB_RATIO")
+    gap_pct = own_history_percentile(gap, gaps, gap_tab) if gap_tab else round(100 * sum(g <= gap for g in gaps) / len(gaps))
+    ratio_pct = own_history_percentile(ratio, ratios, ratio_tab) if ratio_tab else None
     prior = [g for d, g in zip(common, gaps) if d <= (dt.date.fromisoformat(common[-1]) - dt.timedelta(days=30)).isoformat()]
     gap_1m = round(gap - prior[-1]) if prior else None
-    bb_ratio = None
-    if BB in hist and common[-1] in hist[BB]:
-        bb_ratio = round(float(c[common[-1]]) / float(hist[BB][common[-1]]), 2)
 
-    def chk(label, sid, field, threshold, unit):
-        s = by.get(sid)
-        val = None if s is None else s[field]
-        return {"label": label, "value": val, "threshold": threshold, "unit": unit,
-                "hit": val is not None and val >= threshold}
-
-    confirms = [
-        chk("Single-B long-run stress", SINGLE_B, "stress", CONFIRM_LONG_RUN, "pctile"),
-        chk("HY Master long-run stress", HY, "stress", CONFIRM_LONG_RUN, "pctile"),
-        chk("Single-B 1-month widening", SINGLE_B, "chg_1m", CONFIRM_B_1M_BPS, "bps"),
-        chk("BB 1-month widening", BB, "chg_1m", CONFIRM_BB_1M_BPS, "bps"),
-    ]
-    hits = sum(x["hit"] for x in confirms)
-    if gap_pct < CCC_GAP_ALERT_PCT:
-        state, note = "QUIET", "CCC spread is not unusually wide relative to single-B."
-    elif hits == 0:
-        state, note = "ISOLATED", "CCC is blowing out on its own. B, BB and HY do not confirm, so it stays out of the composite."
+    br = breadth_state(hist)
+    ccc_lr = by[CCC]["long_run_percentile"]
+    stressed = ccc_lr >= CCC_STRESSED_PCT or gap_pct >= CCC_GAP_ALERT_PCT
+    base_w = by[CCC]["weight"]
+    if br["confirmed"]:
+        state, weight = "CONFIRMED", CCC_CONFIRMED_WEIGHT
+        note = (f"Single-B and BB have widened as fast as CCC (B {br['b_3m_pct']:+.0f}%, BB {br['bb_3m_pct']:+.0f}% "
+                f"over 3 months) since {br['since']}. CCC counts at weight {CCC_CONFIRMED_WEIGHT}.")
+    elif br["enter_run"] > 0:
+        state, weight = "BUILDING", base_w
+        note = (f"B and BB are both up at least {BREADTH_ENTER:.0%} over 3 months, day {br['enter_run']} of "
+                f"{BREADTH_ENTER_HOLD} needed to confirm. CCC counts at its floor weight {base_w} until then.")
+    elif stressed:
+        state, weight = "ISOLATED", base_w
+        note = (f"CCC is wide against its 1996+ history but single-B and BB have not widened at the same pace. "
+                f"CCC counts at its floor weight {base_w}.")
     else:
-        state, note = "CONFIRMED", f"{hits} of {len(confirms)} higher-quality checks confirm. CCC enters the composite at weight {CCC_CONFIRMED_WEIGHT}."
-    return {"state": state, "note": note, "gap_bps": round(gap), "gap_1m_bps": gap_1m,
-            "gap_percentile": gap_pct, "gap_alert_pct": CCC_GAP_ALERT_PCT, "ccc_bb_ratio": bb_ratio,
-            "confirms": confirms, "confirmed_weight": CCC_CONFIRMED_WEIGHT, "date": common[-1]}
+        state, weight = "QUIET", base_w
+        note = f"CCC is not unusually wide against its 1996+ history. It counts at its floor weight {base_w}."
+
+    fmt = lambda x: None if x is None else round(x, 1)
+    confirms = [
+        {"label": "Single-B 3-month widening", "value": fmt(br["b_3m_pct"]), "threshold": round(100 * BREADTH_ENTER), "unit": "%",
+         "hit": br["b_3m_pct"] is not None and br["b_3m_pct"] >= 100 * BREADTH_ENTER},
+        {"label": "BB 3-month widening", "value": fmt(br["bb_3m_pct"]), "threshold": round(100 * BREADTH_ENTER), "unit": "%",
+         "hit": br["bb_3m_pct"] is not None and br["bb_3m_pct"] >= 100 * BREADTH_ENTER},
+    ]
+    return {"state": state, "note": note, "weight": weight, "base_weight": base_w, "confirmed_weight": CCC_CONFIRMED_WEIGHT,
+            "ccc_long_run_percentile": ccc_lr, "ccc_stressed_pct": CCC_STRESSED_PCT,
+            "gap_bps": round(gap), "gap_1m_bps": gap_1m, "gap_percentile": gap_pct, "gap_alert_pct": CCC_GAP_ALERT_PCT,
+            "ccc_bb_ratio": round(ratio, 2), "ccc_bb_ratio_percentile": ratio_pct,
+            "history_start": gap_tab["start"] if gap_tab else common[0],
+            "breadth": {**br, "enter_pct": round(100 * BREADTH_ENTER), "enter_hold": BREADTH_ENTER_HOLD,
+                        "exit_pct": round(100 * BREADTH_EXIT), "exit_hold": BREADTH_EXIT_HOLD},
+            "confirms": confirms, "date": common[-1]}
 
 
 def main():
@@ -283,8 +405,9 @@ def main():
     out = [summarize(sid, *meta, hist[sid], bridges) for sid, *meta in SERIES if sid in hist]
 
     distress = ccc_distress(out, hist)
-    if distress and distress["state"] == "CONFIRMED":
-        next(s for s in out if s["id"] == CCC)["weight"] = CCC_CONFIRMED_WEIGHT
+    if distress:
+        next(s for s in out if s["id"] == CCC)["weight"] = distress["weight"]
+    ladder = stress_ladder(hist)
     for s in out:
         s["in_composite"] = s["weight"] > 0
 
@@ -307,11 +430,11 @@ def main():
         "composite": composite, "zone": zone(composite),
         "composite_window": composite_window, "zone_window": zone(composite_window),
         "zones": [{"max": top, "label": label} for top, label in ZONES],
-        "groups": groups, "ccc_distress": distress, "failed": failed, "series": out,
+        "groups": groups, "ccc_distress": distress, "ladder": ladder, "failed": failed, "series": out,
     }
     LATEST.write_text(json.dumps(latest, indent=1, ensure_ascii=False) + "\n")
     print(f"composite {composite} {zone(composite)} (window-ranked {composite_window}) | "
-          f"CCC {distress['state'] if distress else 'n/a'} | {len(out) - len(failed)}/{len(SERIES)} fetched")
+          f"CCC {distress['state'] if distress else 'n/a'} | ladder {ladder['height']}/{len(ladder['rungs'])} | {len(out) - len(failed)}/{len(SERIES)} fetched")
     sys.exit(1 if len(failed) == len(SERIES) else 0)
 
 
