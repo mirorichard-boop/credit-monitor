@@ -84,6 +84,18 @@
   .confirm-bar { grid-column: 2 / 4; height: 3px; background: var(--bg); border-radius: 2px; overflow: hidden; }
   .confirm-bar > div { height: 100%; border-radius: 2px; }
   .confirm-val { font-family: var(--mono); font-size: 11px; color: var(--text-secondary); white-space: nowrap; }
+  .ladder { margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--border); }
+  .ladder-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
+  .ladder-sum { font-size: 12px; color: var(--text-secondary); }
+  .ladder-rungs { display: grid; grid-template-columns: repeat(5, minmax(0,1fr)); gap: 8px; }
+  .rung { background: var(--bg); border-radius: var(--radius); padding: 10px 10px 9px; border-top: 3px solid var(--border-light); min-width: 0; }
+  .rung.on { border-top-color: var(--red); }
+  .rung-l { font-size: 11px; font-weight: 600; display: flex; justify-content: space-between; gap: 6px; }
+  .rung-l span:last-child { font-family: var(--mono); font-weight: 500; color: var(--text-muted); }
+  .rung-v { font-family: var(--mono); font-size: 13px; margin: 4px 0 6px; }
+  .rung-bar { height: 3px; background: var(--bg-card); border-radius: 2px; overflow: hidden; }
+  .rung-bar > div { height: 100%; border-radius: 2px; }
+  .rung-n { font-size: 10px; color: var(--text-muted); margin-top: 5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .spread-pct small { display: block; font-size: 9px; color: var(--text-muted); margin-top: 1px; }
   .excl-tag { font-size: 9px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted); border: 1px solid var(--border-light); border-radius: 3px; padding: 1px 4px; }
   .score-alt { font-size: 11px; color: var(--text-muted); margin-top: 6px; font-family: var(--mono); }
@@ -177,6 +189,7 @@
     .methodology { padding: 16px; }
     .distress { padding: 14px; }
     .dstat-v { font-size: 15px; }
+    .ladder-rungs { grid-template-columns: repeat(3, minmax(0,1fr)); }
   }
   @media (max-width: 360px) { .logo-text { display: none; } }
 </style>
@@ -218,7 +231,11 @@
     <div class="distress-note" id="distress-note"></div>
     <div class="distress-body">
       <div class="distress-stats" id="distress-stats"></div>
-      <div><div class="dstat-l" style="margin-bottom:8px">Confirmation from higher-quality credit</div><div class="confirm-list" id="confirm-list"></div></div>
+      <div><div class="dstat-l" style="margin-bottom:8px" id="confirm-head">Breadth: has the widening reached single-B and BB?</div><div class="confirm-list" id="confirm-list"></div></div>
+    </div>
+    <div class="ladder" id="ladder">
+      <div class="ladder-head"><span class="dstat-l">Stress ladder · how far up the ratings the widening has climbed</span><span class="ladder-sum" id="ladder-sum"></span></div>
+      <div class="ladder-rungs" id="ladder-rungs"></div>
     </div>
   </div>
 
@@ -277,19 +294,22 @@
     <summary>Methodology &amp; Framework</summary>
     <div class="methodology-content">
       <h4>Core Credit Stress Score</h4>
-      A weighted average of each series' long-run percentile: a value at the 90th percentile means spreads are wider than 90% of history. Weights (0–10) are shown as bars. CCC &amp; Below is excluded by default; see the CCC Distress Gauge below. The figure under the score shows the same weights ranked only against each series' own 3-year window, the method this dashboard used before.
+      A weighted average of each series' long-run percentile: a value at the 90th percentile means spreads are wider than 90% of history. Weights (0–10) are shown as bars. CCC &amp; Below counts at a floor weight of 3 that rises to 6 once the widening spreads to single-B and BB; see the CCC Distress Gauge below. The figure under the score shows the same weights ranked only against each series' own 3-year window, the method this dashboard used before.
 
       <h4>Long-History Anchoring</h4>
-      FRED serves only ~3 years of the ICE BofA OAS indices. The Moody's Aaa and Baa spreads to the 10-year Treasury (AAA10Y, BAA10Y) go back to the 1980s. Each ICE series is ranked within its own window; the Moody's series is read at the same rank over the same dates; that Moody's value is then ranked against its full history. AAA/AA/A map to Moody's Aaa, everything else to Moody's Baa. This assumes each ICE series sits in its long-run range roughly where Moody's does over the same 3 years. That is a reasonable but untested assumption for high yield, since Moody's covers investment grade only. Moody's Aaa is also partly a curve measure (its bonds are longer than 10 years), so the AAA/AA/A readings are the least reliable and carry the smallest weights.
+      FRED serves only ~3 years of the ICE BofA OAS indices. The Moody's Aaa and Baa spreads to the 10-year Treasury (AAA10Y, BAA10Y) go back to the 1980s. Each ICE series is ranked within its own window; the Moody's series is read at the same rank over the same dates; that Moody's value is then ranked against its full history. AAA/AA/A map to Moody's Aaa, everything else to Moody's Baa. This assumes each ICE series sits in its long-run range roughly where Moody's does over the same 3 years. That is a reasonable but untested assumption for high yield, since Moody's covers investment grade only. Moody's Aaa is also partly a curve measure (its bonds are longer than 10 years), so the AAA/AA/A readings are the least reliable and carry the smallest weights. Single-B and CCC are the exception. CCC barely moves with Baa (3-year rank correlation 0.24), and any series at its 3-year high is capped at Baa's 3-year high, which scored CCC near the 44th percentile when its own history put it above the 80th. Both are instead ranked against ICE's own daily history since Dec 1996: the pre-2023 years are stored as frozen quantiles (data/longrun/) and combined with the live archive.
 
       <h4>CCC Distress Gauge</h4>
-      CCC spreads can blow out on a handful of distressed names or restructurings without broader credit following, as in the 2015–16 energy episode. The gauge tracks the CCC − single-B gap. When that gap ranks at or above its 80th percentile, CCC is ISOLATED unless at least one higher-quality check confirms: single-B or HY Master long-run stress ≥ 60, single-B widening ≥ 75 bps in a month, or BB widening ≥ 50 bps in a month. Once CONFIRMED, CCC enters the composite at weight 6.
+      CCC spreads can blow out on a handful of distressed names without broader credit following: the CCC index is under a tenth of high yield, and a few issuers drive much of its spread. CCC therefore counts at a floor weight of 3, enough to register, and steps up to 6 only when the widening has spread. The test is breadth in percent, since spreads scale with their level: single-B and BB must both be at least 25% wider than 3 months earlier for 5 straight trading days (BUILDING while the days accrue). Confirmation ends only after 10 straight days with both under +15%, so the weight does not flip on daily noise. Back-tested on 1996–2026 ICE data, the test fired 13 times; BBB widened at least 50 bps within the next year after 9 of them. ISOLATED means CCC is above its 75th percentile, or the CCC − B gap above its 80th, without that breadth.
+
+      <h4>Stress Ladder</h4>
+      Tracks how far up the ratings the widening has climbed: CCC, B, BB, BBB, then the IG index. A rung turns when its 5-day average sits a set amount above its low of the past year: CCC 200 bps, B 100, BB 75, BBB 50, IG 40, roughly a fifth to a third of each tier's typical spread. In shocks (2007, 2011, 2018, 2020, Apr 2025) every rung turned within weeks. In slow decompressions CCC led by 2–8 months (1997–98, 1999–2000, 2014), and in 2019 it never reached IG.
 
       <h4>Zone Thresholds</h4>
       Clear (0–25): Normal or compressed spreads, typical of bull markets. Watch (25–50): Mild widening, mid-cycle. Caution (50–75): Significant widening, often pre-crisis. Danger (75+): Historically extreme levels, associated with recessions and credit events.
 
       <h4>Weights</h4>
-      BBB, Moody's Baa, BB and single-B carry the most weight (7/10): they are the largest pools of credit and where fallen-angel and default risk first shows up broadly. 10Y–3M (8/10) is the NY Fed's preferred recession predictor. AAA/AA/A carry little weight because they rarely signal anything on their own.
+      BBB, Moody's Baa, BB and single-B carry the most weight (7/10): they are the largest pools of credit and where fallen-angel and default risk first shows up broadly. CCC is 3, or 6 once breadth confirms. 10Y–3M (8/10) is the NY Fed's preferred recession predictor. AAA/AA/A carry little weight because they rarely signal anything on their own.
 
       <h4>Curve Scoring</h4>
       Treasury curve spreads are scored inversely — more negative (inverted) = higher stress. An inversion in 10Y–3M has preceded every U.S. recession since the 1960s. The Pctile column shows where the curve ranks in its own history; its color, the section badge, and the composite use the inverted (stress) reading.
@@ -380,12 +400,16 @@ function renderGrid(group) {
   const items = SERIES.filter(s => s.group === group);
   document.getElementById('grid-' + group).innerHTML = items.map(s => {
     const zone = getZoneColor(s.stress);
-    const short = s.range_years < SHORT_WINDOW_YEARS && !s.bridge;
+    const short = s.range_years < SHORT_WINDOW_YEARS && !s.bridge && !s.own_history_start;
     const lr = s.long_run_percentile ?? s.percentile;
-    const rangeTitle = s.bridge
+    const rangeTitle = s.own_history_start
+      ? `Ranked against its own ICE history: ${s.own_history_n.toLocaleString()} daily observations since ${s.own_history_start} (pre-2023 years frozen as quantiles). 3-yr window rank ${s.percentile}%`
+      : s.bridge
       ? `3-yr window rank ${s.percentile}% (${s.range_start} to ${s.range_end}) maps to ${BRIDGE_NAMES[s.bridge] || s.bridge} at ${s.bridge_value} bps, which ranks ${lr}% of its history since ${s.bridge_range_start}`
       : `Percentile ranked against ${s.n_obs.toLocaleString()} observations, ${s.range_start} to ${s.range_end}`;
-    const rangeTxt = s.bridge
+    const rangeTxt = s.own_history_start
+      ? `<span class="rng-full">own ICE history since ${s.own_history_start.slice(0, 4)}</span><span class="rng-short">own '${s.own_history_start.slice(2, 4)}</span>`
+      : s.bridge
       ? `<span class="rng-full">via ${BRIDGE_NAMES[s.bridge] || s.bridge} since ${s.bridge_range_start.slice(0, 4)}</span><span class="rng-short">via ${(BRIDGE_NAMES[s.bridge] || s.bridge).replace("Moody's ", '')} '${s.bridge_range_start.slice(2, 4)}</span>`
       : `<span class="rng-full">${fmtMonth(s.range_start)} – ${fmtMonth(s.range_end)}</span><span class="rng-short">since ${fmtMonth(s.range_start)}</span> · ${s.range_years}y`;
     const unit = s.unit === '%' ? '%' : '';
@@ -397,7 +421,7 @@ function renderGrid(group) {
       <span class="spread-value">${fmtVal(s, s.value)}${unit}</span>
       <span class="spread-change">${fmtChange(s, s.chg_1w)}</span>
       <span class="spread-change">${fmtChange(s, s.chg_1m)}</span>
-      <span class="spread-pct" style="color:${zone.color}" title="${rangeTitle}">${lr}%${s.bridge ? `<small>3y ${s.percentile}%</small>` : ''}</span>
+      <span class="spread-pct" style="color:${zone.color}" title="${rangeTitle}">${lr}%${s.bridge || s.own_history_start ? `<small>3y ${s.percentile}%</small>` : ''}</span>
       ${weightCell}
     </div>`;
   }).join('');
@@ -434,7 +458,8 @@ function renderWindowNote() {
   const bridged = SERIES.filter(s => s.bridge && s.in_composite !== false);
   if (!bridged.length) { el.classList.remove('visible'); return; }
   const top = bridged.reduce((a, s) => (s.percentile - s.long_run_percentile > a.percentile - a.long_run_percentile ? s : a));
-  el.innerHTML = `<b>Long-history anchoring.</b> FRED serves only ~3 years of ICE BofA spreads, and those years were unusually tight. ${bridged.length} ICE series are instead mapped onto Moody's Aaa/Baa spreads, which go back to the 1980s: the ICE value's rank in its own window is read off the Moody's series over the same dates, then ranked against Moody's full history. Example: ${top.name} at ${fmtVal(top, top.value)} bps ranks ${top.percentile}% of its 3-yr window but ${top.long_run_percentile}% long-run. The small "3y" figure under each percentile is the old reading.`;
+  const own = SERIES.filter(s => s.own_history_start).map(s => `${s.name} ${s.long_run_percentile}%`).join(', ');
+  el.innerHTML = `<b>Long-history anchoring.</b> FRED serves only ~3 years of ICE BofA spreads, and those years were unusually tight. ${bridged.length} ICE series are instead mapped onto Moody's Aaa/Baa spreads, which go back to the 1980s: the ICE value's rank in its own window is read off the Moody's series over the same dates, then ranked against Moody's full history. Example: ${top.name} at ${fmtVal(top, top.value)} bps ranks ${top.percentile}% of its 3-yr window but ${top.long_run_percentile}% long-run.${own ? ` Single-B and CCC track Baa too loosely for that, so they are ranked against their own ICE history since 1996 (${own}).` : ''} The small "3y" figure under each percentile is the old reading.`;
   el.classList.add('visible');
 }
 
@@ -442,26 +467,59 @@ function renderDistress() {
   const d = latest.ccc_distress;
   const el = document.getElementById('distress');
   if (!d) { el.classList.remove('visible'); return; }
-  const tone = { QUIET: ['var(--green)', 'var(--green-dim)'], ISOLATED: ['var(--yellow)', 'var(--yellow-dim)'], CONFIRMED: ['var(--red)', 'var(--red-dim)'] }[d.state] || ['var(--text-muted)', 'var(--bg)'];
+  const tone = { QUIET: ['var(--green)', 'var(--green-dim)'], ISOLATED: ['var(--yellow)', 'var(--yellow-dim)'], BUILDING: ['var(--orange)', 'var(--orange-dim)'], CONFIRMED: ['var(--red)', 'var(--red-dim)'] }[d.state] || ['var(--text-muted)', 'var(--bg)'];
   const badge = document.getElementById('distress-badge');
   badge.textContent = d.state; badge.style.color = tone[0]; badge.style.background = tone[1];
   el.style.borderLeftColor = tone[0];
-  document.getElementById('distress-weight').textContent = d.state === 'CONFIRMED' ? `in composite · weight ${d.confirmed_weight}` : 'not in composite';
+  document.getElementById('distress-weight').textContent = d.weight === d.confirmed_weight
+    ? `in composite · weight ${d.weight}` : `in composite · weight ${d.weight} (${d.confirmed_weight} once confirmed)`;
   document.getElementById('distress-note').textContent = d.note;
   const sign = v => v === null || v === undefined ? '—' : (v > 0 ? '+' : v < 0 ? '−' : '') + Math.abs(v);
+  const since = `since ${d.history_start.slice(0, 4)}`;
   document.getElementById('distress-stats').innerHTML = [
-    [`${d.gap_bps}`, 'CCC − B gap, bps'],
-    [`${d.gap_percentile}%`, `Gap pctile (3y) · alert ${d.gap_alert_pct}%`],
+    [`${d.ccc_long_run_percentile}%`, `CCC OAS pctile ${since}`],
+    [`${d.gap_bps}`, `CCC − B gap, bps · ${d.gap_percentile}% ${since}`],
     [`${sign(d.gap_1m_bps)}`, 'Gap Δ 1M, bps'],
-    [d.ccc_bb_ratio ? `${d.ccc_bb_ratio}×` : '—', 'CCC ÷ BB'],
+    [d.ccc_bb_ratio ? `${d.ccc_bb_ratio}×` : '—', `CCC ÷ BB${d.ccc_bb_ratio_percentile !== null && d.ccc_bb_ratio_percentile !== undefined ? ` · ${d.ccc_bb_ratio_percentile}% ${since}` : ''}`],
   ].map(([v, l]) => `<div class="dstat"><div class="dstat-v">${v}</div><div class="dstat-l">${l}</div></div>`).join('');
-  document.getElementById('confirm-list').innerHTML = d.confirms.map(c => {
+  const br = d.breadth;
+  const rows = d.confirms.map(c => {
     const frac = c.value === null ? 0 : Math.max(0, Math.min(1, c.value / c.threshold));
     const col = c.hit ? 'var(--red)' : frac >= 0.66 ? 'var(--yellow)' : 'var(--green)';
-    const v = c.value === null ? '—' : c.unit === 'bps' ? `${sign(Math.round(c.value))} / +${c.threshold} bps` : `${c.value}% / ${c.threshold}%`;
+    const v = c.value === null ? '—' : `${sign(Math.round(c.value))}% / +${c.threshold}%`;
     return `<div class="confirm"><span style="color:${col}">${c.hit ? '●' : '○'}</span><span>${c.label}</span><span class="confirm-val">${v}</span><div class="confirm-bar"><div style="width:${frac * 100}%;background:${col}"></div></div></div>`;
-  }).join('');
+  });
+  if (br) {
+    const [label, n, need, col] = br.confirmed
+      ? [`Confirmed since ${br.since} · ends after ${br.exit_hold} days with both under +${br.exit_pct}%`, br.exit_run, br.exit_hold, 'var(--red)']
+      : [`Days held, both at or above +${br.enter_pct}%`, br.enter_run, br.enter_hold, br.enter_run ? 'var(--orange)' : 'var(--green)'];
+    rows.push(`<div class="confirm"><span style="color:${col}">${br.confirmed ? '●' : '○'}</span><span>${label}</span><span class="confirm-val">${n} / ${need}</span><div class="confirm-bar"><div style="width:${Math.min(1, n / need) * 100}%;background:${col}"></div></div></div>`);
+  }
+  document.getElementById('confirm-list').innerHTML = rows.join('');
+  renderLadder();
   el.classList.add('visible');
+}
+
+function renderLadder() {
+  const L = latest.ladder;
+  const box = document.getElementById('ladder');
+  if (!L || !L.rungs.length) { box.style.display = 'none'; return; }
+  box.style.display = '';
+  const lit = L.rungs.filter(r => r.turned).map(r => r.label);
+  const next = L.rungs.find(r => !r.turned);
+  document.getElementById('ladder-sum').textContent = `${L.height} of ${L.rungs.length} rungs` +
+    (next ? ` · next: ${next.label}, ${next.rise_bps} of ${next.threshold_bps} bps` : ' · all tiers widening');
+  document.getElementById('ladder-rungs').innerHTML = L.rungs.map(r => {
+    const frac = Math.max(0, Math.min(1, r.rise_bps / r.threshold_bps));
+    const col = r.turned ? 'var(--red)' : frac >= 0.66 ? 'var(--yellow)' : 'var(--green)';
+    const foot = r.turned ? `turned ${fmtMonth(r.turned_on)}` : `low ${r.low} · ${fmtMonth(r.low_date)}`;
+    return `<div class="rung${r.turned ? ' on' : ''}" title="${r.label}: 5-day average ${r.rise_bps} bps above its ${L.lookback_days}-day low of ${r.low} (${r.low_date}). Turns at +${r.threshold_bps} bps.">
+      <div class="rung-l"><span>${r.label}</span><span>${r.value}</span></div>
+      <div class="rung-v" style="color:${col}">+${r.rise_bps}<span style="color:var(--text-muted);font-size:11px"> / ${r.threshold_bps}</span></div>
+      <div class="rung-bar"><div style="width:${frac * 100}%;background:${col}"></div></div>
+      <div class="rung-n">${foot}</div>
+    </div>`;
+  }).join('');
 }
 
 // HISTORY (CSV archive, loaded on demand)
